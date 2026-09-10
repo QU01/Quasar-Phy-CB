@@ -1,0 +1,24 @@
+# Coeficiente de descarga C_d por tipo de orificio, para
+# mdot_h = C_d · A_h · sqrt(2 · rho3 · DeltaP_L).
+# C_d depende ademas del bleed ratio y de Re: estas son bandas de
+# primera iteracion, no valores de una geometria concreta.
+# Las dos ultimas filas son el DATO DISCRETO VERIFICADO de rugosidad
+# AM: tobera simplex impresa de d_o = 1.2 mm, C_d 0.37-0.41 con acabado
+# fino y 0.50-0.58 con rugosidad alta (menor nucleo de aire). OJO: ahi
+# la rugosidad SUBE C_d; en orificios de aire del liner lo BAJA - ver
+# cd_am_roughness.csv. No mezclar los dos efectos.
+# Las filas de efusion y teardrop no tienen fuente primaria: son
+# extrapolaciones de la casa (columna status = provisional).
+# @source: Quasar_PhyCB_Science.md 4.1; dato AM discreto en DOI 10.1016/j.jmapro.2022.11.031 (Brno UT, OA)
+# @status: verified
+# @status_rowcol: la columna 'status' manda por fila (efusion, efusion conica y teardrop son provisionales)
+# @generated_by: data_pipeline.build()
+hole_type,Cd_min,Cd_max,Cd_nom,status
+plain_sharp_edged,0.6,0.65,0.62,verified
+plunged_flared,0.75,0.85,0.8,verified
+first_iteration_conservative,0.5,0.5,0.5,verified
+effusion_cylindrical,0.55,0.75,0.65,provisional
+effusion_conical,0.6,0.8,0.7,provisional
+teardrop_am_selfsupporting,0.55,0.7,0.62,provisional
+simplex_orifice_am_fine,0.37,0.41,0.39,verified
+simplex_orifice_am_rough,0.5,0.58,0.54,verified

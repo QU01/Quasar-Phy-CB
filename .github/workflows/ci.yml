@@ -1,0 +1,139 @@
+# CI de Quasar Phy-CB  (WAVE7 §3.4 — calcado del de Phy-AC)
+#
+#   python-nocantera : VERIFICACIÓN (test_phycb.py) + VALIDACIÓN
+#                      (validation/validate.py --strict) en Linux y Windows
+#                      SIN Cantera. Comprueba que toda la degradación
+#                      etiquetada del contrato §3 funciona: nada puede
+#                      lanzar una excepción por dependencia ausente.
+#   python-cantera   : lo mismo CON Cantera de conda-forge. En Windows,
+#                      Cantera se instala SIEMPRE por conda-forge, nunca
+#                      por pip (el wheel de PyPI usa LAPACK mono-hilo y la
+#                      red de reactores va 4-8x mas lenta — nota oficial
+#                      de Cantera; ver pyproject.toml).
+#   cfd              : escalera V&V del CFD con MALLAS MINI. Los V&V
+#                      completos NO corren en CI: quedan como script
+#                      manual documentado en docs/VALIDATION.md.
+#   dotnet           : compila la capa 5c (CombustorDesigner) y lanza el
+#                      smoke del contrato (T29). PicoGK necesita su runtime
+#                      nativo x64; si el runner no lo soporta, T29 se SALTA
+#                      con motivo visible — nunca aprueba en falso.
+#
+# FUERA DE ALCANCE (decisión de proyecto 2026-07-31, contrato §12): el
+# backend L2b de OpenFOAM. No hay job de OpenFOAM ni imagen Docker, y
+# `Fidelity.L2B` degrada con `source="openfoam_L2B(out_of_scope->...)"`.
+# Los tests T46-T48 de WAVE5-B van como SKIP declarado, jamás como checks
+# que aprueban.
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  # ---------------------------------------------------------------------
+  # 1/4 y 2/4 · Linux + Windows SIN Cantera (solo NumPy: el núcleo)
+  # ---------------------------------------------------------------------
+  python-nocantera:
+    name: python (${{ matrix.os }}, sin Cantera)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install (NumPy only — the family rule)
+        run: python -m pip install --upgrade pip numpy
+      - name: Layer 0 — data manifest (SHA-256)
+        run: python data_pipeline.py --validate
+      - name: Verification suite (T1-T40)
+        run: python test_phycb.py
+      - name: Validation campaign (strict)
+        run: python validation/validate.py --strict
+      - name: Package builds
+        run: |
+          python -m pip install build
+          python -m build --sdist --wheel
+
+  # ---------------------------------------------------------------------
+  # 3/4 y 4/4 · Linux + Windows CON Cantera de conda-forge
+  # ---------------------------------------------------------------------
+  python-cantera:
+    name: python (${{ matrix.os }}, Cantera conda-forge)
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash -el {0}          # login shell: activates the conda env
+    steps:
+      - uses: actions/checkout@v4
+      - uses: conda-incubator/setup-miniconda@v3
+        with:
+          python-version: "3.13"
+          channels: conda-forge
+          channel-priority: strict
+          activate-environment: phycb
+          auto-activate-base: false
+      - name: Install Cantera from conda-forge (NEVER pip on Windows)
+        run: conda install -y numpy "cantera>=3.1"
+      - name: Show resolved stack
+        run: python -c "import numpy, cantera; print(numpy.__version__, cantera.__version__)"
+      - name: Layer 0 — data manifest (SHA-256)
+        run: python data_pipeline.py --validate
+      - name: Verification suite (T1-T40, CRN paths active)
+        run: python test_phycb.py
+      - name: Validation campaign (strict, with the L1 CRN)
+        run: python validation/validate.py --strict --l1
+
+  # ---------------------------------------------------------------------
+  # CFD — mini meshes only. Full V&V ladder stays manual (see VALIDATION.md)
+  # ---------------------------------------------------------------------
+  cfd:
+    name: cfd (mini meshes)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install --upgrade pip numpy pytest
+      - name: CFD ladder with mini meshes (skips cleanly if not built yet)
+        env:
+          PHYCB_CFD_MESH: mini       # V1-V9 read this and shrink the grid
+        run: |
+          if compgen -G "cfd/tests/test_*.py" > /dev/null; then
+            python -m pytest cfd/tests -q
+          else
+            echo "SKIP: cfd/tests/ has no test files in this revision."
+            echo "WAVE5-A (XLB) and WAVE6 (native IB-RANS) create them."
+            echo "L1.5/L2a degrade with a label meanwhile (contract 3)."
+          fi
+
+  # ---------------------------------------------------------------------
+  # .NET — layer 5c (PicoGK) + contract smoke
+  # ---------------------------------------------------------------------
+  dotnet:
+    name: dotnet (layer 5c + contract smoke)
+    runs-on: windows-latest        # the Example targets net9.0-windows
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: "9.0.x"
+      - name: Build layer 5c
+        run: dotnet build CombustorDesigner.sln -c Debug
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Install
+        run: python -m pip install --upgrade pip numpy
+      - name: Contract smoke (T29 — skips with a reason if PicoGK cannot run)
+        run: python test_phycb.py --only T29 --slow

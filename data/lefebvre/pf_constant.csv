@@ -1,0 +1,30 @@
+# Constantes del factor de patron.
+# Correlacion de dilucion (forma exponencial):
+#    PF = exp[ -k_dilution · (L_DZ/D_L) · (DeltaP_L/q_ref) ]
+# Definiciones que coexisten en la literatura (exponer AMBAS):
+#    PF  = (T4_max - T4_avg)/(T4_avg - T3)   <- estandar de diseno
+#    PF* = (T4_peak - T4_avg)/T4_avg
+#    RTDF = (T4_max_radial - T4_avg)/(T4_avg - T3)
+# k_dilution esta CALIBRADO A MANO, no digitalizado: se eligio para que
+# el caso ancla micro (L_DZ/D_L = 1.8, DeltaP_L/q_ref = 15) caiga en
+# PF = 0.35, centro de la banda 0.30-0.45 de la clase micro.
+# PF_max_default es el limite que consume la restriccion g[0] del
+# contrato 5.1; se puede sobreescribir desde DesignSpec.
+# @source: Quasar_PhyCB_Science.md 4.3 -> Lefebvre & Ballal 3.a ed. cap. 5; bandas medidas en EstadoDelArte 1 y 7
+# @status: provisional
+# @status_reason: la constante k de la correlacion de PF esta marcada [L-verificar] en Ciencia 4.3 y aqui esta calibrada a un solo punto ancla. Las filas PF_target_* y PF_measured_* SI son dato verificado (ver columna status). RECALIBRAR k en WAVE1/WAVE7.
+# @generated_by: data_pipeline.build()
+param,value,units,status
+k_dilution,0.0388823,-,provisional
+PF_max_default,0.35,-,provisional
+PF_target_cooled_turbine_min,0.15,-,verified
+PF_target_cooled_turbine_max,0.25,-,verified
+PF_target_conventional_min,0.25,-,verified
+PF_target_conventional_max,0.35,-,verified
+PF_target_micro_min,0.3,-,verified
+PF_target_micro_max,0.45,-,verified
+PF_measured_small_min,0.21,-,verified
+PF_measured_small_max,0.24,-,verified
+RTDF_min,0.12,-,verified
+RTDF_max,0.3,-,verified
+rtdf_over_pf,0.75,-,provisional

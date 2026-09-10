@@ -1,0 +1,27 @@
+# Factor multiplicativo f(Ra/d) que aplica la rugosidad as-built LPBF
+# al C_d ideal de un orificio de aire del liner:  C_d,AM = C_d,ideal · f.
+# Ra as-built tipica 6-20 um en vertical y 15-40 um en down-skins;
+# con d = 0.5-5 mm, Ra/d cae en 0.002-0.05 (rango de esta tabla).
+# Interpolar lineal en Ra/d; fuera de rango, clampear.
+# AVISO IMPORTANTE: no existe correlacion cerrada publicada. Lo unico
+# verificado es (a) la banda cualitativa '5-20 % de reduccion vs
+# pulido' de Ciencia 4.1 y (b) el dato discreto de tobera de
+# cd_holes.csv (que ademas va en el sentido contrario, por tratarse de
+# un atomizador y no de un orificio de aire). La forma de esta curva es
+# de la casa y esta declarada como tal.
+# @source: Quasar_PhyCB_Science.md 4.1 (banda 5-20 %); dato discreto DOI 10.1016/j.jmapro.2022.11.031
+# @status: provisional
+# @status_reason: no hay correlacion cerrada publicada (hueco declarado en EstadoDelArte 11, prioridad baja 9). La forma f = 1 - LOSS·(Ra/d / RD_MAX)^EXP es de la casa, calibrada solo a la banda 5-20 %. RECALIBRAR con medidas propias de orificios impresos (WAVE7).
+# @model: f = 1 - 0.20*(Ra_over_d/0.050)^0.70
+# @generated_by: data_pipeline.build()
+Ra_over_d,f_Cd,applies_to,status
+0,1,liner_air_hole,provisional
+0.0025,0.975435,liner_air_hole,provisional
+0.005,0.960095,liner_air_hole,provisional
+0.0075,0.946998,liner_air_hole,provisional
+0.01,0.935174,liner_air_hole,provisional
+0.015,0.913898,liner_air_hole,provisional
+0.02,0.894689,liner_air_hole,provisional
+0.03,0.860126,liner_air_hole,provisional
+0.04,0.828922,liner_air_hole,provisional
+0.05,0.8,liner_air_hole,provisional

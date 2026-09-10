@@ -1,0 +1,40 @@
+# Eficiencia de combustion cinetica eta_theta frente al parametro theta
+# de Lefebvre, theta = P3^1.75 · A_ref · D_ref^0.75 · exp(T3/300) / mdot3
+# en SI (Pa, m2, m, kg/s, K). Curva monotona creciente que satura en un
+# techo asintotico; se usa como tabla lookup (interpolar lineal en
+# log10(theta_SI)). Fuera de rango: clampear a los extremos.
+# AVISO: la carta original de Lefebvre cap. 5 NO se ha digitalizado.
+# Esta curva reproduce el UNICO punto de anclaje citado en la
+# investigacion (eta = 99.9 % en theta = 7e7 SI) con una forma
+# exponencial saturada de la casa. Es una forma plausible, no la carta.
+# @source: Lefebvre & Ballal, 'Gas Turbine Combustion' 3.a ed., cap. 5 (carta eta_c vs theta); anclaje theta=7e7 SI segun Quasar_PhyCB_Science.md 2.2
+# @status: provisional
+# @status_reason: carta sin digitalizar; solo se conoce un punto de anclaje (theta=7e7 -> eta=0.999). Bloqueante declarado en EstadoDelArte 11 (prioridad alta 2). RECALIBRAR en WAVE1 con la carta original.
+# @model: eta = 0.9995*(1 - exp(-7.6004*theta/7e+07))
+# @generated_by: data_pipeline.build()
+theta_SI,eta_theta
+1e+06,0.102839
+1.20032e+06,0.12213
+1.44076e+06,0.144739
+1.72936e+06,0.171109
+2.07578e+06,0.201688
+2.49159e+06,0.236907
+2.9907e+06,0.277133
+3.58978e+06,0.322625
+4.30887e+06,0.373462
+5.172e+06,0.429467
+6.20804e+06,0.490115
+7.4516e+06,0.554452
+8.94427e+06,0.62104
+1.07359e+07,0.687945
+1.28865e+07,0.752825
+1.54679e+07,0.813119
+1.85664e+07,0.866364
+2.22855e+07,0.910596
+2.67496e+07,0.944746
+3.2108e+07,0.968898
+3.85397e+07,0.984278
+4.62598e+07,0.992917
+5.55264e+07,0.997093
+6.66491e+07,0.998781
+8e+07,0.999331

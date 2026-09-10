@@ -1,0 +1,16 @@
+# Cociente area de liner / area de referencia y longitudes de zona
+# normalizadas por el diametro del liner D_L.
+# L_DZ/D_L lo fija en realidad el factor de patron (ver pf_constant.csv):
+# esta banda es solo el punto de partida del dimensionado.
+# reverse_annular hereda los cocientes del anular: los dos giros de
+# 180 grados cambian la perdida de forma, NO estos cocientes de area.
+# AVISO: los cocientes estan marcados [L-verificar] en Ciencia 2.5.
+# @source: Quasar_PhyCB_Science.md 2.5 -> Lefebvre & Ballal 3.a ed. caps. 4-5
+# @status: provisional
+# @status_reason: cocientes A_L/A_ref y L_zona/D_L marcados [L-verificar] en Ciencia 2.5; pendientes de cotejo contra el libro (tarea bloqueante de WAVE1 0).
+# @generated_by: data_pipeline.build()
+arch,arch_id,AL_over_Aref,L_pz_over_DL_min,L_pz_over_DL_max,L_pz_over_DL_nom,L_sz_over_DL_nom,L_dz_over_DL_min,L_dz_over_DL_max,L_dz_over_DL_nom,L_tot_over_DL_min,L_tot_over_DL_max,status
+can,0,0.66,0.66,0.75,0.7,0.5,1.5,2.5,2,2.5,4,provisional
+tuboannular,-1,0.66,0.66,0.75,0.7,0.5,1.5,2.5,2,2.5,4,provisional
+annular,1,0.7,0.66,0.75,0.7,0.5,1.5,2.5,2,2.5,4,provisional
+reverse_annular,2,0.7,0.66,0.75,0.7,0.5,1.5,2.5,2,2.5,4,provisional

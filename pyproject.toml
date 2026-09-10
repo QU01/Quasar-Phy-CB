@@ -1,0 +1,57 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "phycb"
+version = "0.1.0"
+description = "QUASAR Phy-CB — autonomous design of 3D-printable Brayton combustors"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Quasar Solutions Lab" }]
+keywords = ["combustor", "gas-turbine", "additive-manufacturing", "lpbf",
+            "cfd", "optimization", "design-for-additive-manufacturing"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "License :: OSI Approved :: Apache Software License",
+  "Topic :: Scientific/Engineering",
+]
+
+# El núcleo es SOLO-NumPy (regla de la familia Phy-*). Todo lo demás es
+# opcional y degrada con etiqueta en el campo `source` del record.
+dependencies = ["numpy>=1.24"]
+
+[project.optional-dependencies]
+# Cantera EN WINDOWS: instalar por conda-forge, NUNCA por pip (el wheel de
+# PyPI usa LAPACK mono-hilo y las redes de reactores van 4-8x mas lentas —
+# nota oficial de Cantera). Este extra existe para Linux/CI.
+chem = ["cantera>=3.1"]
+plots = ["matplotlib>=3.7"]
+cad = ["cadquery>=2.4"]
+cfd = ["jax>=0.4", "xlb"]
+cfd_native = ["warp-lang>=1.3"]
+# NOTA: el extra 'openfoam' (foamlib) NO existe. El backend L2b de WAVE5-B
+# queda FUERA DE ALCANCE por decision de proyecto (2026-07-31): la maquina
+# objetivo es Windows y OpenFOAM exigiria WSL2/Docker. Ver
+# docs/IMPLEMENTATION_CONTRACT.md seccion 12.
+dev = ["pytest>=7.4", "build"]
+
+[project.scripts]
+phycb = "phycb_cli:main"
+
+[project.urls]
+Homepage = "https://github.com/quasar-solutions-lab/phy-cb"
+
+[tool.setuptools]
+py-modules = ["physics_core", "crn_core", "structures_core", "dfam_checker",
+              "geometry_generator", "report_generator", "visualization",
+              "neural_optimizer", "cycle_seam", "data_pipeline",
+              "cli_style", "phycb_cli"]
+
+[tool.setuptools.package-data]
+"*" = ["data/**/*.csv", "data/manifest.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_phycb.py", "cfd/tests/test_*.py"]

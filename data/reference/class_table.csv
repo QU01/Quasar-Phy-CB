@@ -1,0 +1,107 @@
+# Tabla de valores de referencia por clase de potencia de microturbina.
+# Es la ESCALERA DE ANCLAS numero 1 del plan de validacion: cualquier
+# diseno de Phy-CB que se salga de estas bandas debe justificarse.
+# class_id: 0 = 0.1-5 kW (microturborreactor), 1 = 5-50 kW,
+# 2 = 50-250 kW.
+# nan = el parametro no aplica a esa clase (p. ej. no hay recuperador
+# en la clase 0, ni vaporizadores por encima de la clase 0).
+# Material de liner por clase (no numerico, vive en
+# structures_core.MATERIALS): clase 0 IN625/Hastelloy-X, clase 1 IN625
+# (caso Bath/HiETA), clase 2 Hastelloy X (caso Sierra Turbines).
+# T3 recuperada de la clase 2: 820 C = 1093 K medidos (HiETA/Bath).
+# PF medido en combustores pequenos reales: 0.21-0.24.
+# @source: Quasar_PhyCB_EstadoDelArte.md 7 (tabla de valores de referencia, marcas [W] verificadas en fuente web)
+# @status: verified
+# @caveat: las cifras certificadas exactas de Capstone C30/C65 y Turbec T100 NO se verificaron (EstadoDelArte 7 y 11, prioridad media 4); las emisiones de referencia viven en emissions_coeffs.csv (modelo reference_micro).
+# @generated_by: data_pipeline.build()
+class_id,class_name,param,min,max,units,status
+0,micro_0p1_5kW,power_kW,0.1,5,kW,verified
+0,micro_0p1_5kW,pressure_ratio,2,3.5,-,verified
+0,micro_0p1_5kW,T3_K_unrecuperated,400,470,K,verified
+0,micro_0p1_5kW,T3_K_recuperated,nan,nan,K,verified
+0,micro_0p1_5kW,T4_K,1100,1250,K,verified
+0,micro_0p1_5kW,mdot_air_kgs,0.05,0.25,kg/s,verified
+0,micro_0p1_5kW,FAR_global,0.01,0.018,-,verified
+0,micro_0p1_5kW,phi_global,0.15,0.27,-,verified
+0,micro_0p1_5kW,phi_pz,0.85,1.15,-,verified
+0,micro_0p1_5kW,dp_over_p,0.02,0.04,-,verified
+0,micro_0p1_5kW,U_ref_ms,8,20,m/s,verified
+0,micro_0p1_5kW,tau_ms,4,8,ms,verified
+0,micro_0p1_5kW,V_c_L,0.05,0.4,L,verified
+0,micro_0p1_5kW,D_casing_mm,80,130,mm,verified
+0,micro_0p1_5kW,I_MW_m3_atm,25,60,MW/m3/atm,verified
+0,micro_0p1_5kW,eta_comb_design,0.97,0.99,-,verified
+0,micro_0p1_5kW,eta_comb_idle,0.9,0.96,-,verified
+0,micro_0p1_5kW,PF,0.35,0.5,-,verified
+0,micro_0p1_5kW,frac_cool,0,0.15,-,verified
+0,micro_0p1_5kW,T_wall_liner_K,900,1050,K,verified
+0,micro_0p1_5kW,t_liner_mm,0.5,0.8,mm,verified
+0,micro_0p1_5kW,d_eff_mm,0.5,0.7,mm,verified
+0,micro_0p1_5kW,n_eff_holes,300,1500,-,verified
+0,micro_0p1_5kW,d_dilution_mm,3,6,mm,verified
+0,micro_0p1_5kW,n_dilution_per_row,6,10,-,verified
+0,micro_0p1_5kW,n_injectors,1,1,-,verified
+0,micro_0p1_5kW,n_vaporizer_tubes,6,12,-,verified
+0,micro_0p1_5kW,SMD_um,40,70,um,verified
+0,micro_0p1_5kW,ALR_airblast,2,5,-,verified
+0,micro_0p1_5kW,SN_swirl,0.7,1,-,verified
+1,small_5_50kW,power_kW,5,50,kW,verified
+1,small_5_50kW,pressure_ratio,3,4.5,-,verified
+1,small_5_50kW,T3_K_unrecuperated,430,500,K,verified
+1,small_5_50kW,T3_K_recuperated,800,950,K,verified
+1,small_5_50kW,T4_K,1150,1300,K,verified
+1,small_5_50kW,mdot_air_kgs,0.15,0.6,kg/s,verified
+1,small_5_50kW,FAR_global,0.012,0.02,-,verified
+1,small_5_50kW,phi_global,0.18,0.3,-,verified
+1,small_5_50kW,phi_pz,0.8,1.1,-,verified
+1,small_5_50kW,dp_over_p,0.03,0.05,-,verified
+1,small_5_50kW,U_ref_ms,10,25,m/s,verified
+1,small_5_50kW,tau_ms,5,10,ms,verified
+1,small_5_50kW,V_c_L,0.3,1.5,L,verified
+1,small_5_50kW,D_casing_mm,120,200,mm,verified
+1,small_5_50kW,I_MW_m3_atm,20,50,MW/m3/atm,verified
+1,small_5_50kW,eta_comb_design,0.99,0.999,-,verified
+1,small_5_50kW,eta_comb_idle,0.94,0.98,-,verified
+1,small_5_50kW,PF,0.25,0.4,-,verified
+1,small_5_50kW,frac_cool,0.1,0.25,-,verified
+1,small_5_50kW,T_wall_liner_K,1000,1150,K,verified
+1,small_5_50kW,t_liner_mm,0.6,1,mm,verified
+1,small_5_50kW,d_eff_mm,0.5,0.8,mm,verified
+1,small_5_50kW,n_eff_holes,1000,4000,-,verified
+1,small_5_50kW,d_dilution_mm,5,9,mm,verified
+1,small_5_50kW,n_dilution_per_row,8,12,-,verified
+1,small_5_50kW,n_injectors,1,6,-,verified
+1,small_5_50kW,n_vaporizer_tubes,nan,nan,-,verified
+1,small_5_50kW,SMD_um,35,60,um,verified
+1,small_5_50kW,ALR_airblast,3,6,-,verified
+1,small_5_50kW,SN_swirl,0.6,0.9,-,verified
+2,medium_50_250kW,power_kW,50,250,kW,verified
+2,medium_50_250kW,pressure_ratio,3.5,5,-,verified
+2,medium_50_250kW,T3_K_unrecuperated,450,530,K,verified
+2,medium_50_250kW,T3_K_recuperated,900,1100,K,verified
+2,medium_50_250kW,T4_K,1200,1350,K,verified
+2,medium_50_250kW,mdot_air_kgs,0.5,1.5,kg/s,verified
+2,medium_50_250kW,FAR_global,0.012,0.02,-,verified
+2,medium_50_250kW,phi_global,0.18,0.3,-,verified
+2,medium_50_250kW,phi_pz,0.6,0.9,-,verified
+2,medium_50_250kW,dp_over_p,0.03,0.05,-,verified
+2,medium_50_250kW,U_ref_ms,15,30,m/s,verified
+2,medium_50_250kW,tau_ms,5,10,ms,verified
+2,medium_50_250kW,V_c_L,1,4,L,verified
+2,medium_50_250kW,D_casing_mm,180,300,mm,verified
+2,medium_50_250kW,I_MW_m3_atm,20,45,MW/m3/atm,verified
+2,medium_50_250kW,eta_comb_design,0.995,0.999,-,verified
+2,medium_50_250kW,eta_comb_idle,0.96,0.99,-,verified
+2,medium_50_250kW,PF,0.2,0.35,-,verified
+2,medium_50_250kW,frac_cool,0.15,0.3,-,verified
+2,medium_50_250kW,T_wall_liner_K,1050,1200,K,verified
+2,medium_50_250kW,t_liner_mm,0.8,1.5,mm,verified
+2,medium_50_250kW,d_eff_mm,0.6,1,mm,verified
+2,medium_50_250kW,n_eff_holes,2000,8000,-,verified
+2,medium_50_250kW,d_dilution_mm,7,14,mm,verified
+2,medium_50_250kW,n_dilution_per_row,10,16,-,verified
+2,medium_50_250kW,n_injectors,4,12,-,verified
+2,medium_50_250kW,n_vaporizer_tubes,nan,nan,-,verified
+2,medium_50_250kW,SMD_um,30,50,um,verified
+2,medium_50_250kW,ALR_airblast,3,6,-,verified
+2,medium_50_250kW,SN_swirl,0.6,0.9,-,verified

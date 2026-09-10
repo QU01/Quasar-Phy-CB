@@ -1,0 +1,45 @@
+# Coeficientes del balance termico estacionario 1D del liner:
+#    R1 + C1 = K_1-2 = R2 + C2   (por unidad de area)
+#    R1 = rad_internal_prefactor · sigma · (1+eps_w) · eps_g
+#         · Tg^1.5 · (Tg^2.5 - Tw1^2.5)
+#    eps_g = 1 - exp(-gas_emissivity_coeff · P3 · L · (f·l_b)^0.5
+#                    · Tg^-1.5)
+#    C1 = conv_internal_coeff · (k_g/D_L^0.2)
+#         · (mdot_g/(A_L·mu_g))^0.8 · (Tg - Tw1)
+#    C2 = conv_external_coeff · (k_a/D_an^0.2)
+#         · (mdot_an/(A_an·mu_a))^0.8 · (Tw2 - T3)
+# y de la refrigeracion por ranura de Lefebvre:
+#    eta_film = film_slot_C · m^0.65 · (mu_g/mu_c)^0.15
+#               · (x/s)^-0.2 · (t/s)^-0.2,  valido 0.5 < m < 1.3.
+# La ESTRUCTURA (Dittus-Boelter, exponente 0.8) es solida; los
+# coeficientes 0.020 / 0.29 / 1.10 estan marcados [L-verificar].
+# eps_wall_default es de handbook: el valor por material vive en
+# structures_core.MATERIALS (emissivity_wall) y manda sobre este.
+# Punto critico micro-recuperado: con T3 hasta 1093 K (recuperador ~90 %,
+# HiETA/Bath) C2 se desploma y el aire deja de refrigerar por conveccion
+# - es EL argumento para efusion densa fabricada por AM.
+# @source: Quasar_PhyCB_Science.md 5 y 5.1 -> Lefebvre & Ballal 3.a ed. caps. 8-10; T3 recuperada medida en EstadoDelArte 3.4
+# @status: provisional
+# @status_reason: coeficientes 0.020, 0.29, 0.5 y 1.10 marcados [L-verificar] en Ciencia 5. Los exponentes de Dittus-Boelter y las luminosidades SI estan verificados (ver columna status). RECALIBRAR contra el libro caps. 8-9.
+# @generated_by: data_pipeline.build()
+param,value,units,status
+rad_internal_prefactor,0.5,-,provisional
+gas_emissivity_coeff,0.29,-,provisional
+conv_internal_coeff,0.02,-,provisional
+conv_external_coeff,0.02,-,provisional
+conv_reynolds_exp,0.8,-,verified
+conv_diameter_exp,-0.2,-,verified
+rad_internal_Tg_exp,1.5,-,provisional
+rad_internal_dT_exp,2.5,-,provisional
+luminosity_jet_a,1.7,-,verified
+luminosity_propane,1,-,verified
+luminosity_h2,1,-,verified
+eps_wall_default,0.8,-,provisional
+film_slot_C,1.1,-,provisional
+film_slot_exp_m,0.65,-,provisional
+film_slot_exp_mu_ratio,0.15,-,provisional
+film_slot_exp_x_over_s,-0.2,-,provisional
+film_slot_exp_t_over_s,-0.2,-,provisional
+film_slot_m_min,0.5,-,verified
+film_slot_m_max,1.3,-,verified
+T3_recuperated_max_K,1093,K,verified

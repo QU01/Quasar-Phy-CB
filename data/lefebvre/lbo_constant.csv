@@ -1,0 +1,43 @@
+# Extincion pobre (LBO) y encendido.
+# Correlacion de Lefebvre para llamas de spray:
+#    phi_LBO = C_LBO_SI · (A_ref/V_PZ)
+#              · (mdot_A / (P3^-1.30_inv · exp(T3/300)))
+#              · (D32^2/lambda_eff) · (1/LHV)
+#    -- con P3 elevado a exp_P3 = -1.30 en el denominador, es decir
+#       el termino es mdot_A / (P3^1.30 · exp(T3/300)).
+# Lecturas de diseno: P3^-1.3 (la estabilidad se degrada a baja presion,
+# critico a pi ~ 3); D32^2 (la atomizacion es LA palanca a escala
+# pequena); combustible gaseoso -> el termino de evaporacion desaparece
+# (gas_fuel_evap_term = 0) y el margen es estructuralmente distinto.
+# En L1 el margen se mide por numero de Damkohler: Da ~ 0.3-0.8 en LBO
+# frente a Da ~ 20 en punto de diseno (dato verificado).
+# Encendido (Ballal & Lefebvre):
+#    E_min = (pi/6)·rho_g·cp·(T_st - T0)·d_q^3,  E_min ~ D32^3.
+# Un factor 2 en SMD son 8 en energia de chispa: por eso los
+# microturborreactores usan encendido asistido.
+# AVISO: la constante global C_LBO_SI esta calibrada a UN punto ancla.
+# @source: Quasar_PhyCB_Science.md 6.1 y 6.2 -> Lefebvre & Ballal 3.a ed. cap. 5; precisiones y Da en EstadoDelArte 1
+# @status: provisional
+# @status_reason: la constante global de phi_LBO esta marcada [L-verificar] en Ciencia 6.1 y aqui esta calibrada a un unico caso ancla (REF_CB10 -> phi_LBO = 0.50). Precision declarada de la correlacion: +-45 %. Los exponentes y los datos de encendido SI estan verificados (ver columna status). RECALIBRAR en WAVE7 contra banco propio.
+# @calibration: A_ref/V_PZ=33.3 1/m, mdot_A=0.13 kg/s, P3=250000 Pa, T3=430 K, D32=50e-6 m, lambda_eff=8e-7 m2/s, LHV=43.1e6 J/kg -> phi_LBO=0.50
+# @generated_by: data_pipeline.build()
+param,value,units,status
+C_LBO_SI,6.95e+16,SI,provisional
+exp_P3,-1.3,-,verified
+exp_T3_scale_K,300,K,verified
+exp_SMD,2,-,verified
+LBO_margin_min,0.2,-,provisional
+accuracy_lefebvre,0.45,-,verified
+accuracy_flame_volume,0.15,-,verified
+Da_lbo_min,0.3,-,verified
+Da_lbo_max,0.8,-,verified
+Da_design,20,-,verified
+gas_fuel_evap_term,0,-,verified
+E_spark_J_min,1,J,verified
+E_spark_J_max,5,J,verified
+x_spark_over_Lpz_min,0.3,-,verified
+x_spark_over_Lpz_max,0.5,-,verified
+phi_local_ignition_min,0.7,-,verified
+phi_local_ignition_max,1.3,-,verified
+E_min_prefactor,0.523599,-,verified
+E_min_exp_SMD,3,-,verified

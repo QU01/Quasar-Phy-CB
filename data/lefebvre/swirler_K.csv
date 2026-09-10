@@ -1,0 +1,15 @@
+# Coeficiente K_sw de la perdida de presion del swirler:
+#    DeltaP_sw/q_ref = K_sw · [ (A_ref/(A_sw·sec beta))^2
+#                               - (A_ref/A_L)^2 ]
+# y bandas de diseno del numero de swirl
+#    S_N = (2/3)·[(1-(D_hub/D_sw)^3)/(1-(D_hub/D_sw)^2)]·tan(beta).
+# S_N > SN_ctrz_min genera zona de recirculacion toroidal central
+# (CTRZ) - este umbral SI esta verificado; K_sw no.
+# beta en grados (interfaz); internamente radianes.
+# @source: Quasar_PhyCB_Science.md 4.4 -> Lefebvre & Ballal 3.a ed. cap. 4
+# @status: provisional
+# @status_reason: K_sw = 1.3 / 1.15 marcado [L-verificar] en Ciencia 4.4; la forma de la ecuacion si es estandar. RECALIBRAR contra el libro cap. 4.
+# @generated_by: data_pipeline.build()
+vane_type,K_sw,beta_deg_min,beta_deg_max,SN_design_min,SN_design_max,SN_ctrz_min,status
+flat_vanes,1.3,45,60,0.6,1,0.6,provisional
+curved_vanes,1.15,45,60,0.6,1,0.6,provisional

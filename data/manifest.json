@@ -1,0 +1,104 @@
+{
+  "lefebvre/eta_vs_theta.csv": {
+    "sha256": "2c3f63fccd83b7cb741d9866de86d595fba75c493d481fa6f4bb4eb5261b12ee",
+    "bytes": 1612,
+    "rows": 25,
+    "status": "provisional"
+  },
+  "lefebvre/plf_by_arch.csv": {
+    "sha256": "981ecee4668672aae9a2de0bb4ea0b5d17371a8d316af4b6f188d0e3ee234fef",
+    "bytes": 1432,
+    "rows": 5,
+    "status": "verified"
+  },
+  "lefebvre/air_split_by_arch.csv": {
+    "sha256": "e522a433d1c21f4b132b400cf30d39b9c9e422f40793d8fbda6e5f6740de1927",
+    "bytes": 1538,
+    "rows": 4,
+    "status": "verified"
+  },
+  "lefebvre/zone_lengths.csv": {
+    "sha256": "8c5e843d4693e474c198870ca64612819037b1435767793faa97444246c63f4a",
+    "bytes": 1189,
+    "rows": 4,
+    "status": "provisional"
+  },
+  "lefebvre/cd_holes.csv": {
+    "sha256": "f5697beff4b4d1b96b5050767b660b811fd83eee80415b501e42a4b2eb84fa6e",
+    "bytes": 1374,
+    "rows": 8,
+    "status": "verified"
+  },
+  "lefebvre/cd_am_roughness.csv": {
+    "sha256": "4b6fab8ae38606549ae9885e670e4b0ffe73a6da23de6a5ef77a34faf4dd6e57",
+    "bytes": 1622,
+    "rows": 10,
+    "status": "provisional"
+  },
+  "lefebvre/pf_constant.csv": {
+    "sha256": "faf644f4a6d4cc0e34653845d7a82683c19354acdf54a6d5bfe8c63dbb0c557b",
+    "bytes": 1618,
+    "rows": 13,
+    "status": "provisional"
+  },
+  "lefebvre/swirler_K.csv": {
+    "sha256": "993f124030a85013fedb685694f34e9cf354fb5d804ae4a75fe12e54f5e9a1ec",
+    "bytes": 911,
+    "rows": 2,
+    "status": "provisional"
+  },
+  "lefebvre/thermal_coeffs.csv": {
+    "sha256": "1f228be814a3576b88a105ffd6c78c46da9204ad35be8907857464cc0b67892e",
+    "bytes": 2320,
+    "rows": 20,
+    "status": "provisional"
+  },
+  "lefebvre/film_effusion.csv": {
+    "sha256": "4b4dcddfcc0d870f2459f8f2bcd75283dd66c3c8cfbdf4606b866e0912868bd7",
+    "bytes": 4468,
+    "rows": 56,
+    "status": "verified"
+  },
+  "lefebvre/lbo_constant.csv": {
+    "sha256": "9b7e613393c9f557ef6870d5b6531083b1c38b2871d87592c9adb19a952ca3b7",
+    "bytes": 2318,
+    "rows": 19,
+    "status": "provisional"
+  },
+  "lefebvre/atomization_coeffs.csv": {
+    "sha256": "e19638a354d81dc301e35bf81098cb7ae75afbe21e7903f1955281c2e920472d",
+    "bytes": 4892,
+    "rows": 65,
+    "status": "verified"
+  },
+  "lefebvre/emissions_coeffs.csv": {
+    "sha256": "08b45f2280632ceaaa3ed9c4ed78ce6b3d8bb78c15e2b581b41bad5be46d61fc",
+    "bytes": 5841,
+    "rows": 72,
+    "status": "verified"
+  },
+  "reference/class_table.csv": {
+    "sha256": "29bdd21c17d5e0fa577cc47c2a0a86b2471cb7e73ade06646a8f1e0526005ab9",
+    "bytes": 5408,
+    "rows": 90,
+    "status": "verified"
+  },
+  "thermo/tad_fit_jet_a.csv": {
+    "sha256": "f398008e15e2aff0e5f07d77094887d954e1ee71f94ca1834fe4521be3c61f1d",
+    "bytes": 43746,
+    "rows": 1080,
+    "status": "verified"
+  },
+  "thermo/tad_fit_propane.csv": {
+    "sha256": "7fc3cd5e99f864a6cbe5593b46224936163abf4c8658a00ace20aa07595d7f10",
+    "bytes": 43608,
+    "rows": 1080,
+    "status": "verified"
+  },
+  "thermo/tad_fit_h2.csv": {
+    "sha256": "6dc7895d8cf3bb886dba2ded6ef0c87817dc994c8ef484f305f53f26792b9d04",
+    "bytes": 43629,
+    "rows": 1080,
+    "status": "verified"
+  }
+}

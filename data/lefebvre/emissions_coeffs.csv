@@ -1,0 +1,109 @@
+# Coeficientes de las correlaciones de emisiones de nivel preliminar.
+# TODAS se calculan y se reportan con su nombre: el usuario ve el
+# abanico, no un numero unico.
+#   EI_NOx Lefebvre: C·P3^1.25·V_c·exp(0.01·T_st)/(mdot_A·T_PZ)  [g/kg]
+#   EI_CO  Lefebvre: C·mdot_A·T_PZ·exp(-0.00345·T_PZ)
+#                    / ((V_c - V_e)·(dp/p)^0.5·P3^1.5)
+#   Rizk & Mongia global: C·(tau - 0.5·tau_e)^0.5·exp(-71100/T_st)
+#                         ·P3^-0.05·(dP3/P3)^-0.5
+#   Odgers: C·exp(-21670/T_f)·P3^0.66·[1 - exp(-250·tau)]
+#   Laviolette: C·P3^0.4048·[1 - exp(-480·tau)]/exp(37902/T_f)
+# TRAMPA DE UNIDADES (auditoria dimensional 2026-07-30): la unidad de
+# P3 NO es explicita en las fuentes verificadas y la de tau de Rizk &
+# Mongia estaba mal declarada. Las tres familias de factores
+#   P3_unit_scale_from_Pa · tau_unit_scale_from_s ·
+#   dp_over_p_unit_scale_from_frac
+# se fijaron por ENSAYO SISTEMATICO en DOS extremos: el caso ancla
+# REF_CB10 (250 kPa, 430 K, 0.13 kg/s, tau 6.05 ms) y un motor grande
+# (30 atm, 800 K, tau 3 ms, T_st 2600 K, dp/p 5 %, donde la literatura
+# da EI_NOx = 20-40 g/kg). Se conserva la combinacion que cae en rango
+# en AMBOS extremos - eso es evidencia dimensional, no ajuste. El
+# resultado por correlacion esta comentado fila a fila abajo. Siguen
+# marcadas PROVISIONAL: son inferencia dimensional, no lectura de la
+# fuente primaria; cerrarlas exige Lefebvre & Ballal 3.a ed. cap. 9.
+# Abanico resultante en el ancla [g/kg]: lefebvre 2.00 · rizk_mongia
+# 3.63 · zonal 3.76 · odgers 8.91 · laviolette 3.17 (dispersion x4.5,
+# antes x2.6e5). En el motor grande: 39.2 / 26.7 / 41.0 / 23.5 / 4.3.
+# Compromiso NOx<->CO capturado explicitamente: NOx ~ +V_c·exp(0.01·T_st)
+# y CO ~ 1/V_c, luego existe un V_c optimo analitico
+# d(w1·EI_NOx + w2·EI_CO)/dV_c = 0 - implementarlo en L0.
+# REGLA DE HONESTIDAD: estas correlaciones dan TENDENCIAS (+-30-50 % en
+# el mejor caso, incluso con CRN calibrado). El reporte de Phy-CB nunca
+# presenta NOx/CO como absolutos certificables.
+# @source: Quasar_PhyCB_Science.md 8.1-8.4; tesis U. Toronto (EI_NOx Lefebvre ec. 1.4, Rizk & Mongia ecs. 3.5/1.5-1.8, NEPP/GasTurb), MDPI Appl. Sci. 14:6104 (Odgers, Laviolette)
+# @status: verified
+# @status_rowcol: la columna 'status' manda por fila: EI_CO (86/-0.00345), la funcion de phi de Rizk & Mongia zonal y TODOS los *_unit_scale_* son PROVISIONALES (evidencia dimensional en dos extremos, no lectura de fuente primaria)
+# @generated_by: data_pipeline.build()
+model,param,value,units,status
+nox_lefebvre,C,9e-08,mixed,verified
+nox_lefebvre,exp_P3,1.25,-,verified
+nox_lefebvre,exp_Tst_coeff,0.01,1/K,verified
+nox_lefebvre,P3_unit_scale_from_Pa,0.001,-,provisional
+co_lefebvre,C,86,mixed,provisional
+co_lefebvre,exp_Tpz_coeff,-0.00345,1/K,provisional
+co_lefebvre,exp_dp_over_p,-0.5,-,provisional
+co_lefebvre,exp_P3,-1.5,-,provisional
+co_lefebvre,P3_unit_scale_from_Pa,0.001,-,provisional
+nox_rizk_mongia,C,1.5e+15,mixed,verified
+nox_rizk_mongia,exp_tau_group,0.5,-,verified
+nox_rizk_mongia,tau_e_factor,0.5,-,verified
+nox_rizk_mongia,Ea_over_R_K,71100,K,verified
+nox_rizk_mongia,exp_P3,-0.05,-,verified
+nox_rizk_mongia,exp_dp_over_p,-0.5,-,verified
+nox_rizk_mongia,P3_unit_scale_from_Pa,0.001,-,provisional
+nox_rizk_mongia,tau_unit_scale_from_s,1,-,provisional
+nox_rizk_mongia,dp_over_p_unit_scale_from_frac,100,-,provisional
+nox_rizk_mongia_zonal,C,1e+13,mixed,verified
+nox_rizk_mongia_zonal,P3_unit_scale_from_Pa,1,-,provisional
+nox_rizk_mongia_zonal,tau_unit_scale_from_s,1,-,provisional
+nox_rizk_mongia_zonal,Ea_over_R_K,71442,K,verified
+nox_rizk_mongia_zonal,aa_C1,1.95,-,provisional
+nox_rizk_mongia_zonal,aa_C2,5.76,-,provisional
+nox_rizk_mongia_zonal,pz_lean_C,7.56,-,provisional
+nox_rizk_mongia_zonal,pz_lean_exp_phi,-7.2,-,provisional
+nox_rizk_mongia_zonal,pz_rich_C,5.21,-,provisional
+nox_rizk_mongia_zonal,pz_rich_exp_phi,-2.99,-,provisional
+nox_rizk_mongia_zonal,phi_split,1.08,-,verified
+nox_rizk_mongia_zonal,offset,-1.6,-,provisional
+nox_rizk_mongia_zonal,exp_tau_pz,0.64,-,verified
+nox_rizk_mongia_zonal,sz_dz_C,1.172,-,provisional
+nox_rizk_mongia_zonal,sz_dz_exp_phi,-4.56,-,provisional
+nox_rizk_mongia_zonal,exp_tau_sz_dz,0.876,-,verified
+nox_odgers,C,29,mixed,verified
+nox_odgers,Ea_over_R_K,21670,K,verified
+nox_odgers,exp_P3,0.66,-,verified
+nox_odgers,tau_sat_coeff,250,1/s,verified
+nox_odgers,P3_unit_scale_from_Pa,1,-,provisional
+nox_odgers,tau_unit_scale_from_s,1,-,verified
+nox_laviolette,C,190200,mixed,verified
+nox_laviolette,exp_P3,0.4048,-,verified
+nox_laviolette,tau_sat_coeff,480,1/s,verified
+nox_laviolette,Ea_over_R_K,37902,K,verified
+nox_laviolette,P3_unit_scale_from_Pa,1,-,provisional
+nox_laviolette,tau_unit_scale_from_s,1,-,verified
+nox_nepp,C,33.2,"psia,degR",verified
+nox_nepp,P3_ref_psia,432.7,psia,verified
+nox_nepp,exp_P3,0.4,-,verified
+nox_nepp,T3_ref_degR,1487.6,degR,verified
+nox_nepp,T3_scale_degR,350,degR,verified
+nox_gasturb,C,32,"kPa,K",verified
+nox_gasturb,P3_ref_kPa,2965,kPa,verified
+nox_gasturb,exp_P3,0.4,-,verified
+nox_gasturb,T3_ref_K,826,K,verified
+nox_gasturb,T3_scale_K,194,K,verified
+evaporation,lambda_e_C,8,-,verified
+evaporation,lambda_e_Re_coeff,0.3,-,verified
+evaporation,lambda_e_exp_Re,0.5,-,verified
+evaporation,lambda_e_exp_Pr,0.33,-,verified
+evaporation,far_corr_slope,-0.0295,-,verified
+evaporation,far_corr_offset,0.45,-,verified
+honesty,uncertainty_band_min,0.3,-,verified
+honesty,uncertainty_band_max,0.5,-,verified
+plausibility,EI_NOx_min,0.01,g/kg,verified
+plausibility,EI_NOx_max,200,g/kg,verified
+reference_micro,NOx_ppm15O2_gas_min,9,ppm,verified
+reference_micro,NOx_ppm15O2_gas_max,25,ppm,verified
+reference_micro,CO_ppm15O2_gas_min,10,ppm,verified
+reference_micro,CO_ppm15O2_gas_max,50,ppm,verified
+reference_micro,NOx_ppm15O2_kero_min,35,ppm,verified
+reference_micro,NOx_ppm15O2_kero_max,80,ppm,verified

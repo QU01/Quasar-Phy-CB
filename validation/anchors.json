@@ -1,0 +1,46 @@
+{
+ "schema": "phycb-anchors-1",
+ "seed": 71,
+ "generated_at": "2026-08-01T18:52:32+00:00",
+ "note": "Anclas de regresión CONGELADAS. Moverlas exige --freeze-anchors y citar en docs/PENDIENTES_Lverificar.md la corrección que las movió (contrato §10.9).",
+ "anchors": {
+  "REF_CB10": {
+   "theta": [
+    2.0,
+    0.7,
+    0.3,
+    0.12,
+    0.42,
+    0.7,
+    8.0,
+    10.0,
+    0.6,
+    6.0,
+    2.0,
+    4.0,
+    0.75,
+    1.8,
+    0.8,
+    0.0,
+    250000.0,
+    430.0,
+    0.13,
+    1150.0
+   ],
+   "fidelity": "L0",
+   "eta_comb": 0.9845678521513491,
+   "dp_over_p": 0.03,
+   "PF": 0.35000000857453734,
+   "T_wall_max_K": 994.5661308722123,
+   "EI_NOx": 1.9997289858184721,
+   "phi_pz": 1.048256400006333,
+   "tau_ms": 6.049578288704031,
+   "T04_K": 1150.0,
+   "D_ref_mm": 65.16494087188273,
+   "L_tot_mm": 166.28874853483066,
+   "SMD_um": 50.0,
+   "EI_CO": 57.56788156631442,
+   "source": "correlations_L0"
+  }
+ }
+}

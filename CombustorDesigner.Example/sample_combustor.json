@@ -1,0 +1,156 @@
+{
+  "schema": "phycb-combustor-1",
+  "arch": "can",
+  "_conventions": "SI internally, mm/deg on every interface with the unit as a key suffix. Z is the axis of revolution and the gas flows +Z (in reverse_annular the GAS turns 180 deg twice, but the geometric axis is still Z). liner.profile rows are [z_mm, r_inner_mm, r_outer_mm]; casing.profile rows are [z_mm, r_mm] with r the INNER radius. hole_rows[].angle_deg is the tilt of the hole AXIS away from the RADIAL direction towards +Z (0 = purely radial, 90 = purely axial); an explicit `axis` = [radial, tangential, axial] wins over it. effusion.angle_deg is measured from the liner SURFACE, not from the normal. g <= 0 means feasible.",
+  "_note": "Reference contract: 10 kW can combustor of the 5-50 kW class (EstadoDelArte 7), IN625 liner of 0.8 mm, 6 walking-stick vaporizers, effusion of 0.6 mm at 25 deg. Written by hand as the smoke case for CombustorDesigner (WAVE3 T29) so the C# side can be exercised without the Python layer. The numbers are dimensionally consistent, but they are NOT the output of a verified optimizer run. The dome is FLAT on purpose: an annular flat face at z=0 is free in build z+ and is what makes that orientation the right one (same rationale as the clean demo of dfam_checker.py). Set liner.dome.type to 'hemispherical' to exercise the spherical shell path, but then keep injectors.ring_r_mm inside the dome sphere radius.",
+
+  "design_vector": {
+    "arch": 0.0,
+    "AL_over_Aref": 0.70,
+    "frac_pz": 0.30,
+    "frac_sz": 0.12,
+    "frac_dz": 0.42,
+    "swirl_SN": 0.78,
+    "n_holes_pz": 8.0,
+    "n_holes_dz": 10.0,
+    "d_eff_mm": 0.60,
+    "pitch_over_d_eff": 6.0,
+    "injector": 2.0,
+    "ALR": 4.0,
+    "L_pz_over_DL": 0.75,
+    "L_dz_over_DL": 1.80,
+    "t_liner_mm": 0.80,
+    "fuel": 0.0,
+    "P3_Pa": 250000.0,
+    "T3_K": 430.0,
+    "mdot_kgs": 0.13,
+    "T4_K": 1150.0
+  },
+
+  "derived": {
+    "eta_comb": 0.988,
+    "dp_over_p": 0.042,
+    "PF": 0.24,
+    "T_wall_max_K": 1105.0,
+    "T04_K": 1150.0,
+    "P04_Pa": 239500.0,
+    "f_fuel_air": 0.0172,
+    "EI_NOx": 3.1,
+    "EI_CO": 6.4,
+    "phi_pz": 0.86,
+    "tau_ms": 5.2,
+    "SMD_um": 42.0,
+    "feasible": true,
+    "source": "hand_written_reference(no_optimizer_run)"
+  },
+
+  "liner": {
+    "profile": [
+      [0.0, 0.0, 12.0],
+      [0.0, 0.0, 18.0],
+      [26.0, 0.0, 35.0],
+      [95.0, 0.0, 35.0],
+      [120.0, 0.0, 22.0]
+    ],
+    "t_wall_mm": 0.8,
+    "material": "Inconel-625",
+    "fillet_r_mm": 1.2,
+    "dome": { "type": "flat", "z_mm": 0.0 }
+  },
+
+  "casing": {
+    "profile": [
+      [0.0, 48.0],
+      [95.0, 48.0],
+      [120.0, 30.0]
+    ],
+    "t_wall_mm": 1.2,
+    "material": "Inconel-718",
+    "flange_bolt_count": 12,
+    "flange_bolt_d_mm": 4.0,
+    "flange_w_mm": 10.0,
+    "flange_t_mm": 3.0,
+    "boss_h_mm": 4.0
+  },
+
+  "swirler": {
+    "type": "axial",
+    "n_vanes": 8,
+    "beta_deg": 55.0,
+    "SN": 0.78,
+    "d_hub_mm": 10.0,
+    "d_tip_mm": 24.0,
+    "vane_t_mm": 1.2,
+    "chord_mm": 9.0,
+    "monolithic_with_dome": false
+  },
+
+  "injectors": {
+    "type": "vaporizer",
+    "count": 6,
+    "ALR": 4.0,
+    "ring_r_mm": 12.0,
+    "phi0_deg": 0.0,
+    "tube_d_mm": 6.0,
+    "tube_t_mm": 0.8,
+    "tube_z0_mm": 6.0,
+    "tube_z1_mm": 34.0,
+    "bend_deg": 180.0,
+    "bend_r_mm": 4.0
+  },
+
+  "hole_rows": [
+    { "zone": "pz", "id": "bujia", "z_mm": 10.0, "r_mm": 22.0, "n": 1,
+      "d_mm": 3.0, "Cd": 0.62, "angle_deg": 0.0, "shape": "circle",
+      "phi0_deg": 90.0, "plunged": false },
+    { "zone": "pz", "z_mm": 32.0, "r_mm": 35.0, "n": 8, "d_mm": 4.0,
+      "Cd": 0.62, "angle_deg": 0.0, "shape": "teardrop", "plunged": false },
+    { "zone": "sz", "z_mm": 55.0, "r_mm": 35.0, "n": 8, "d_mm": 4.5,
+      "Cd": 0.62, "angle_deg": 0.0, "shape": "teardrop", "plunged": false },
+    { "zone": "dz", "z_mm": 78.0, "r_mm": 35.0, "n": 10, "d_mm": 6.5,
+      "Cd": 0.62, "angle_deg": 0.0, "shape": "teardrop", "plunged": false }
+  ],
+
+  "effusion": {
+    "d_mm": 0.6,
+    "pitch_x_over_d": 6.0,
+    "pitch_y_over_d": 5.0,
+    "angle_deg": 25.0,
+    "shape": "conical",
+    "cone_expansion": 1.6,
+    "staggered": true,
+    "zones": [ { "z0_mm": 40.0, "z1_mm": 92.0, "rows": 10 } ]
+  },
+
+  "dfam": {
+    "build_orientation": "z+",
+    "min_wall_mm": 0.8,
+    "voxel_mm": 0.5,
+    "coarse_voxel_mm": 1.0,
+    "overhang_frac_max": 0.02,
+    "drain_ports": [
+      { "z_mm": 8.0,   "d_mm": 5.0, "phi_deg": 0.0,   "boss": true },
+      { "z_mm": 112.0, "d_mm": 5.0, "phi_deg": 180.0, "boss": true }
+    ]
+  },
+
+  "cfd_boundary_conditions": {
+    "P3_Pa": 250000.0,
+    "T3_K": 430.0,
+    "mdot_air_kgs": 0.13,
+    "mdot_fuel_kgs": 0.002236,
+    "T4_target_K": 1150.0,
+    "walls": "1d_thermal",
+    "turbulence_intensity": 0.05,
+    "fuel": "jet_a"
+  },
+
+  "run_meta": {
+    "name": "PhyCB_can10kW",
+    "schema": "phycb-combustor-1",
+    "seed": 71,
+    "source": "hand_written_reference(no_optimizer_run)",
+    "fidelity": "L0",
+    "versions": { "contract": "phycb-combustor-1", "builder": "CombustorDesigner" }
+  }
+}

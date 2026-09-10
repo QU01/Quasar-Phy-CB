@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Library</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RootNamespace>CombustorDesigner</RootNamespace>
+    <AssemblyName>CombustorDesigner</AssemblyName>
+    <Nullable>disable</Nullable>
+    <LangVersion>latest</LangVersion>
+    <Platforms>AnyCPU;x64</Platforms>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <NoWarn>CS1591</NoWarn>
+    <PackageLicenseExpression>Apache-2.0</PackageLicenseExpression>
+    <Authors>Quasar Solutions Lab</Authors>
+    <Product>QUASAR Phy-CB</Product>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="PicoGK" Version="2.2.0" />
+  </ItemGroup>
+</Project>

@@ -1,0 +1,93 @@
+# Coeficientes de las correlaciones de diametro medio de Sauter (SMD)
+# y datos de diseno de cada familia de inyector (gate theta[10]:
+# 0=airblast, 1=simplex, 2=vaporizador, 3=micromix).
+# Formas (SI salvo donde 'units' dice mixed):
+#   simplex Lefebvre:  SMD = C·sigma^0.25·mu_l^0.25·mdot_l^0.25
+#                            ·dP_l^-0.5·rho_a^-0.25
+#   prefilming Rizkalla & Lefebvre (1975), DIMENSIONAL - USAR ESTA:
+#      SMD = C1·sqrt(sigma·rho_l·Lc)/(rho_g·U_g)·(1 + mdot_l/mdot_g)
+#          + C2·(mu_l^2/(sigma·rho_l))^0.425·Lc^0.575
+#                ·(1 + mdot_l/mdot_g)^2
+#   prefilming El-Shanawany & Lefebvre (1980):
+#      SMD = [C1·(sigma/(rho_g·U_g^2))^0.6·(rho_l/rho_g)^0.1·Dp^0.4
+#             + C2·sqrt(mu_l^2·Dp/(sigma·rho_l))]·(1 + mdot_l/mdot_g)
+#   penetracion de chorro:  Y_max/d_j = C·sqrt(J).
+#   flow number:  FN = mdot_L/sqrt(rho_L·dP_L)  [m2]  (forma SI).
+# Decision de diseno de Phy-CB: airblast por defecto (SMD independiente
+# del caudal de combustible, usa la energia del swirler, SMD ~ U_A^-1.2);
+# el simplex puro es mala eleccion por debajo de ~100 kW porque exigiria
+# 20-60 bar de combustible para SMD ~ 50 um.
+# Para H2 (rama micromix) el SMD no aplica: es rama gaseosa.
+# AVISO: la forma ADIMENSIONAL habitual del prefilming (0.33/0.068) NO
+# pudo verificarse; se conserva por compatibilidad pero no es la de
+# defecto.
+# @source: Quasar_PhyCB_Science.md 7.1-7.4; verificaciones en arXiv:1906.04042 (Tabla 7), OA Cranfield de Rizkalla & Lefebvre 1975 y El-Shanawany & Lefebvre 1980, ILASS 2023 paper 37 (flow number), gtba.co.uk/engine_designs/kj66.htm y MDPI Energies 18(23):6168 (micromix)
+# @status: verified
+# @status_rowcol: la columna 'status' manda por fila: simplex (2.25/7.3/4.4), prefilming adimensional (0.33/0.068) y plain-jet (0.48/0.15) son PROVISIONALES - cotejar Lefebvre & Ballal 3.a ed. caps. 6 y 10 antes de usarlos en un numero de reporte
+# @generated_by: data_pipeline.build()
+model,param,value,units,status
+simplex_lefebvre,C,2.25,SI,provisional
+simplex_lefebvre,exp_sigma,0.25,-,provisional
+simplex_lefebvre,exp_mu_l,0.25,-,provisional
+simplex_lefebvre,exp_mdot_l,0.25,-,provisional
+simplex_lefebvre,exp_dP_l,-0.5,-,provisional
+simplex_lefebvre,exp_rho_a,-0.25,-,provisional
+simplex_radcliffe,C,7.3,mixed,provisional
+simplex_radcliffe,exp_sigma,0.6,-,provisional
+simplex_radcliffe,exp_nu,0.2,-,provisional
+simplex_radcliffe,exp_mdot,0.25,-,provisional
+simplex_radcliffe,exp_dP,-0.4,-,provisional
+simplex_jasuja,C,4.4,mixed,provisional
+simplex_jasuja,exp_sigma,0.6,-,provisional
+simplex_jasuja,exp_nu,0.16,-,provisional
+simplex_jasuja,exp_mdot,0.22,-,provisional
+simplex_jasuja,exp_dP,-0.43,-,provisional
+prefilm_rizkalla_lefebvre,C1,0.00333,SI,verified
+prefilm_rizkalla_lefebvre,C2,0.013,SI,verified
+prefilm_rizkalla_lefebvre,exp_visc_group,0.425,-,verified
+prefilm_rizkalla_lefebvre,exp_Lc,0.575,-,verified
+prefilm_elshanawany_lefebvre,C1,0.073,SI,verified
+prefilm_elshanawany_lefebvre,exp_weber_group,0.6,-,verified
+prefilm_elshanawany_lefebvre,exp_rho_ratio,0.1,-,verified
+prefilm_elshanawany_lefebvre,exp_Dp,0.4,-,verified
+prefilm_elshanawany_lefebvre,C2,0.0015,SI,verified
+prefilm_nondimensional,C1,0.33,-,provisional
+prefilm_nondimensional,C2,0.068,-,provisional
+plain_jet_rizk_lefebvre,C1,0.48,-,provisional
+plain_jet_rizk_lefebvre,C2,0.15,-,provisional
+gepperth_2013,C,12.08,-,verified
+gepperth_2013,exp_We,-0.31,-,verified
+gepperth_2013,exp_Re,-0.28,-,verified
+gepperth_2013,exp_rho_ratio,-0.037,-,verified
+gepperth_2013,exp_ha_over_delta,0.27,-,verified
+chaussonnet_2016,C,1.69,-,verified
+chaussonnet_2016,U_ref_ms,0.7,m/s,verified
+airblast,ALR_design_min,2,-,verified
+airblast,ALR_design_max,6,-,verified
+airblast,exp_U_air,-1.2,-,verified
+airblast,U_air_design_min_ms,60,m/s,verified
+airblast,U_air_design_max_ms,100,m/s,verified
+vaporizer_kj66,n_tubes_min,6,-,verified
+vaporizer_kj66,n_tubes_max,12,-,verified
+vaporizer_kj66,tube_length_mm,64,mm,verified
+vaporizer_kj66,elbow_deg,30,deg,verified
+vaporizer_kj66,area_holes_over_tube_min,0.25,-,verified
+vaporizer_kj66,area_holes_over_tube_max,0.5,-,verified
+vaporizer_kj66,tau_tube_ms_min,6,ms,verified
+vaporizer_kj66,tau_tube_ms_max,8,ms,verified
+vaporizer_kj66,d50_um_max,50,um,verified
+vaporizer_kj66,T_tube_wall_K_max,1173.15,K,verified
+micromix_h2,J_min,1.25,-,verified
+micromix_h2,J_max,2.44,-,verified
+micromix_h2,d_hole_mm_min,0.3,mm,verified
+micromix_h2,d_hole_mm_max,1,mm,verified
+micromix_h2,d_hole_mm_typ,0.5,mm,verified
+micromix_h2,kW_per_injector_min,1,kW,verified
+micromix_h2,kW_per_injector_max,3,kW,verified
+micromix_h2,phi_max,0.3,-,verified
+micromix_h2,U_air_min_ms,50,m/s,verified
+micromix_h2,T_wall_K_max,600,K,verified
+jet_penetration,C,1.15,-,verified
+jet_penetration,Ymax_over_DL_single_row,0.5,-,verified
+jet_penetration,Ymax_over_DL_two_rows,0.33,-,verified
+flow_number,definition_is_mdot_over_sqrt_rho_dP,1,-,verified

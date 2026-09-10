@@ -1,0 +1,42 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+.pytest_cache/
+.venv/
+
+# Salidas de corridas: NINGÚN artefacto de ejecución se versiona.
+# El flywheel (dataset.csv) se copia a mano al repo si alguna vez se versiona.
+runs/
+phycb_out/
+output/
+geometry_out/
+*.stl
+*.vdb
+*.step
+*.stp
+report.html
+dataset.csv
+dfam_report.json
+phycb_run.json
+PicoGK.log
+phys_cache.jsonl
+
+# .NET
+bin/
+obj/
+*.user
+
+# CFD
+cfd/cases/
+*.vtk
+*.vtu
+*.foam
+*.npz
+
+# Sistema
+.DS_Store
+Thumbs.db
+imgui.ini

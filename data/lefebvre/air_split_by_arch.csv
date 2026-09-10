@@ -1,0 +1,20 @@
+# Reparto de aire (fracciones de mdot3) y riquezas objetivo por zona.
+# El reparto de Phy-CB NO depende de la arquitectura geometrica sino
+# del concepto de combustion: la fila por defecto para las tres
+# arquitecturas del gate theta[0] es 'microturbine' (phycb_default=1).
+# frac_cool es CIERRE, no variable: frac_cool = 1 - (pz + sz + dz).
+# Los valores _nom de cada fila suman exactamente 1 (validado).
+# Los _nom de microturbine son los de THETA_REF (contrato 1) para que
+# el caso ancla REF_CB10 y esta tabla no puedan divergir.
+# phi_sz = nan donde el concepto no tiene zona secundaria.
+# Dato de calibracion medido (EstadoDelArte 1.8): en un
+# microturborreactor real la optimizacion bajo el aire de PZ de
+# 39.35 % a 32 % (phi_PZ 0.89 -> 1.09) para estabilizar en aceleracion.
+# @source: Quasar_PhyCB_Science.md 3 (tabla de reparto y riquezas); banda micro de phi_PZ en EstadoDelArte 7
+# @status: verified
+# @generated_by: data_pipeline.build()
+regime,phycb_default,frac_pz_min,frac_pz_max,frac_pz_nom,frac_sz_min,frac_sz_max,frac_sz_nom,frac_dz_min,frac_dz_max,frac_dz_nom,frac_cool_min,frac_cool_max,frac_cool_nom,phi_pz_min,phi_pz_max,phi_sz_min,phi_sz_max,status
+conventional_aero,0,0.18,0.25,0.22,0.1,0.15,0.13,0.25,0.45,0.35,0.2,0.4,0.3,0.8,1.2,0.6,0.8,verified
+microturbine,1,0.25,0.35,0.3,0.1,0.2,0.12,0.35,0.55,0.42,0.1,0.25,0.16,0.85,1.15,0.6,0.8,verified
+rql,0,0.45,0.6,0.5,0,0,0,0.25,0.35,0.3,0.15,0.25,0.2,1.2,1.8,nan,nan,verified
+lean_premix,0,0.6,0.75,0.65,0,0,0,0.15,0.25,0.2,0.1,0.2,0.15,0.5,0.6,nan,nan,verified

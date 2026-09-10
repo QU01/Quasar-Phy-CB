@@ -1,0 +1,78 @@
+# Refrigeracion por pelicula y efusion: bandas de diseno verificadas
+# (experimentales) + mapa de eficacia adiabatica frente a la relacion
+# de soplado M = rho_c·U_c/(rho_g·U_g) y al angulo del orificio.
+# Formato largo (tidy): filas de banda llevan M y angle_deg = nan; las
+# filas del mapa llevan param = 'eta_cool' con M y angle_deg definidos.
+# eta_cool = (T_g - T_w)/(T_g - T_c).
+# Los orificios CONICOS (triviales en AM) ganan un factor
+# conical_gain_at_M0p25 = 1.25 sobre los cilindricos a M = 0.25 (dato
+# verificado); aplicar sobre el mapa cilindrico y saturar en el maximo
+# de la banda del esquema.
+# 30 grados supera a 60 grados en eficacia adiabatica (confirmado): por
+# eso f(angulo) del mapa decrece con el angulo.
+# A M bajo el refrigerante queda adherido; a M alto hay blow-off local
+# que mejora aguas abajo - por eso el mapa satura, no decrece.
+# AVISO: el mapa es de la casa. La forma cerrada de la eficacia de
+# efusion NO se pudo verificar en la investigacion (hueco declarado).
+# @source: Quasar_PhyCB_Science.md 5.1 y EstadoDelArte 4.5 (bandas experimentales); mapa eta_cool(M, angulo) sin fuente primaria
+# @status: verified
+# @status_rowcol: la columna 'status' manda por fila: las bandas son dato experimental verificado, el mapa eta_cool es provisional
+# @model: eta_cool = 0.72*(1 - exp(-M/0.22))*f(angle)
+# @generated_by: data_pipeline.build()
+scheme,param,M,angle_deg,value,units,status
+effusion,d_hole_mm_min,nan,nan,0.4,mm,verified
+effusion,d_hole_mm_max,nan,nan,1,mm,verified
+effusion,d_hole_mm_printable_min,nan,nan,0.5,mm,verified
+effusion,d_hole_mm_printable_max,nan,nan,0.8,mm,verified
+effusion,angle_deg_min,nan,nan,20,deg,verified
+effusion,angle_deg_max,nan,nan,30,deg,verified
+effusion,pitch_x_over_d_min,nan,nan,5,-,verified
+effusion,pitch_x_over_d_max,nan,nan,8,-,verified
+effusion,pitch_y_over_d_min,nan,nan,4,-,verified
+effusion,pitch_y_over_d_max,nan,nan,8,-,verified
+effusion,porosity_min,nan,nan,0.01,-,verified
+effusion,porosity_max,nan,nan,0.05,-,verified
+effusion,n_rows_min,nan,nan,10,-,verified
+effusion,n_rows_max,nan,nan,20,-,verified
+effusion,n_rows_saturation,nan,nan,10,-,verified
+effusion,M_design_min,nan,nan,0.3,-,verified
+effusion,M_design_max,nan,nan,0.8,-,verified
+effusion,conical_gain_at_M0p25,nan,nan,1.25,-,verified
+bare_liner,eta_cool_min,nan,nan,0.1,-,verified
+bare_liner,eta_cool_max,nan,nan,0.25,-,verified
+slot_film,eta_cool_min,nan,nan,0.4,-,verified
+slot_film,eta_cool_max,nan,nan,0.5,-,verified
+effusion,eta_cool_min,nan,nan,0.5,-,verified
+effusion,eta_cool_max,nan,nan,0.7,-,verified
+impingement_effusion,eta_cool_min,nan,nan,0.65,-,verified
+impingement_effusion,eta_cool_max,nan,nan,0.8,-,verified
+transpiration_lattice,eta_cool_min,nan,nan,0.8,-,verified
+transpiration_lattice,eta_cool_max,nan,nan,0.95,-,verified
+effusion_cylindrical,eta_cool,0.2,20,0.429919,-,provisional
+effusion_cylindrical,eta_cool,0.3,20,0.535875,-,provisional
+effusion_cylindrical,eta_cool,0.4,20,0.603129,-,provisional
+effusion_cylindrical,eta_cool,0.5,20,0.645818,-,provisional
+effusion_cylindrical,eta_cool,0.6,20,0.672914,-,provisional
+effusion_cylindrical,eta_cool,0.8,20,0.701029,-,provisional
+effusion_cylindrical,eta_cool,1,20,0.712357,-,provisional
+effusion_cylindrical,eta_cool,0.2,30,0.429919,-,provisional
+effusion_cylindrical,eta_cool,0.3,30,0.535875,-,provisional
+effusion_cylindrical,eta_cool,0.4,30,0.603129,-,provisional
+effusion_cylindrical,eta_cool,0.5,30,0.645818,-,provisional
+effusion_cylindrical,eta_cool,0.6,30,0.672914,-,provisional
+effusion_cylindrical,eta_cool,0.8,30,0.701029,-,provisional
+effusion_cylindrical,eta_cool,1,30,0.712357,-,provisional
+effusion_cylindrical,eta_cool,0.2,45,0.395525,-,provisional
+effusion_cylindrical,eta_cool,0.3,45,0.493005,-,provisional
+effusion_cylindrical,eta_cool,0.4,45,0.554879,-,provisional
+effusion_cylindrical,eta_cool,0.5,45,0.594152,-,provisional
+effusion_cylindrical,eta_cool,0.6,45,0.619081,-,provisional
+effusion_cylindrical,eta_cool,0.8,45,0.644947,-,provisional
+effusion_cylindrical,eta_cool,1,45,0.655368,-,provisional
+effusion_cylindrical,eta_cool,0.2,60,0.356833,-,provisional
+effusion_cylindrical,eta_cool,0.3,60,0.444776,-,provisional
+effusion_cylindrical,eta_cool,0.4,60,0.500597,-,provisional
+effusion_cylindrical,eta_cool,0.5,60,0.536029,-,provisional
+effusion_cylindrical,eta_cool,0.6,60,0.558519,-,provisional
+effusion_cylindrical,eta_cool,0.8,60,0.581854,-,provisional
+effusion_cylindrical,eta_cool,1,60,0.591256,-,provisional

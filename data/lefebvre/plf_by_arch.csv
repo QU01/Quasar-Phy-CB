@@ -1,0 +1,21 @@
+# Factor de perdida de presion PLF = DeltaP_3-4/q_ref, banda de Dp/p y
+# velocidad de referencia U_ref por arquitectura de camara.
+# arch_id sigue el gate theta[0] del contrato: 0=can, 1=annular,
+# 2=reverse_annular. arch_id = -1 -> arquitectura fuera del gate;
+# arch_id = -2 -> fila de OBJETIVO de clase, no de arquitectura.
+# La fila micro_target es la regla dura de Phy-CB: en microturbinas
+# Dp/p (2-4 %) es RESTRICCION del ciclo, no salida; cada punto extra
+# vale ~ -0.5 % de empuje o +0.25 % de consumo especifico.
+# Fraccion tipica: DP_liner = 70-80 % del DP total (resto difusor+snout).
+# La columna 'status' manda por fila: reverse_annular no aparece en la
+# tabla de PLF de la literatura y se estima por analogia.
+# @source: Quasar_PhyCB_Science.md 2.1 (tabla PLF por arquitectura) -> Lefebvre & Ballal 3.a ed. cap. 4; banda micro verificada en EstadoDelArte 1
+# @status: verified
+# @status_rowcol: la columna 'status' manda por fila (reverse_annular = provisional)
+# @generated_by: data_pipeline.build()
+arch,arch_id,PLF_min,PLF_max,PLF_nom,dp_over_p_min,dp_over_p_max,dp_over_p_nom,U_ref_min_ms,U_ref_max_ms,U_ref_nom_ms,status
+can,0,35,37,36,0.06,0.07,0.065,25,35,30,verified
+tuboannular,-1,25,28,26.5,0.05,0.06,0.055,25,40,32.5,verified
+annular,1,18,20,19,0.05,0.06,0.055,25,45,35,verified
+reverse_annular,2,20,25,22.5,0.05,0.06,0.055,20,40,30,provisional
+micro_target,-2,15,25,20,0.02,0.04,0.03,10,25,17.5,verified
