@@ -1359,3 +1359,35 @@ def test_acceptance_guard_verify_candidate_cli(cand8, tmp_path, capsys):
     p.write_text(json.dumps(cand), encoding="utf-8")
     assert sl.main(["verify-candidate", "--candidate", str(p)]) == 1
     assert "theta_arch" in capsys.readouterr().out
+
+
+# ------------------------------------------------------- 17.1-03 · matriz
+def test_matrix_timeout_d391_by_mass():
+    assert sl.accept_timeout_s("5") == 240.0
+    assert sl.accept_timeout_s("25") == 240.0
+    assert sl.accept_timeout_s("8") == sl.ACCEPT_TIMEOUT_S == 120.0
+    assert "D-391" in sl.ACCEPT_TIMEOUT_POLICY
+
+
+def test_matrix_support_paths_do_not_change_model():
+    for rel in ("validation/scale_l0.py", "validation/test_scale_l0.py",
+                "validation/scale_acceptance.json", "test_phycb.py",
+                "validation/SCALE-L0-RESULTS.md",
+                "CombustorDesigner/src/CombustorDesigner/Swirler.cs",
+                "CombustorDesigner.Example/Program.cs"):
+        assert sl.is_support_path(rel), rel
+    for rel in ("physics_core.py", "neural_optimizer.py", "phycb_cli.py",
+                "geometry_generator.py", "dfam_checker.py",
+                "validation/scale_inlets.json", "validation/cases.py"):
+        assert not sl.is_support_path(rel), rel
+
+
+def test_matrix_single_model_source():
+    a = "a" * 40
+    doc = {"masses": {"8": {"status": "accepted", "model_source_sha": a},
+                      "5": {"status": "blocked", "model_source_sha": "b" * 40}}}
+    assert sl.matrix_model_source(doc) == a
+    assert sl.matrix_model_source({}) is None
+    doc["masses"]["25"] = {"status": "accepted", "model_source_sha": "c" * 40}
+    with pytest.raises(sl.ScaleError):
+        sl.matrix_model_source(doc)

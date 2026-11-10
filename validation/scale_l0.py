@@ -1092,6 +1092,21 @@ ACCEPT_RECIPE = dict(fidelity="L0", t4=1200.0, t4_max=1250.0, fuel="jet_a",
 ACCEPT_STAGES = (dict(stage=1, seed=71, n_init=320, rounds=5, batch_size=14),
                  dict(stage=2, seed=137, n_init=480, rounds=7, batch_size=18))
 ACCEPT_TIMEOUT_S = 120.0
+#: Tope por celda e intento (D-391, 17.1-03): 240 s en las aceptaciones de 5
+#: y 25 kg/s para que una celda no se bloquee por reloj y no por física. El
+#: par de 8 kg/s ya aceptado conserva el tope de 17.1-02. Recetas, semillas,
+#: escalada y criterios NO cambian.
+ACCEPT_TIMEOUTS_BY_MASS = {"5": 240.0, "8": ACCEPT_TIMEOUT_S, "25": 240.0}
+ACCEPT_TIMEOUT_POLICY = ("D-391: 240 s por celda e intento en 5 y 25 kg/s; "
+                         "8 kg/s conserva 120 s (17.1-02)")
+#: Rutas de SOPORTE: arnés, pruebas, informe, evidencia y generador C#. No
+#: forman parte de la física Python que ejecuta la matriz, así que una
+#: revisión que sólo las cambia conserva el `model_source_sha` de la matriz.
+SUPPORT_PATHS = frozenset({
+    "validation/scale_acceptance.json", "validation/scale_l0.py",
+    "validation/test_scale_l0.py", "validation/SCALE-L0-RESULTS.md",
+    "test_phycb.py", "CombustorDesigner.sln"})
+SUPPORT_PREFIXES = ("CombustorDesigner/", "CombustorDesigner.Example/")
 T04_TARGET_K = 1200.0
 T04_CAP_K = 1250.0
 TOL_MDOT_KGS = 2e-9
@@ -1522,6 +1537,16 @@ def _accept_argv(row: dict, arch: str, stage: dict, outdir: Path) -> list:
             "--outdir", str(outdir)]
 
 
+def accept_timeout_s(key) -> float:
+    """Tope por celda e intento para el caudal `key` (D-391)."""
+    return float(ACCEPT_TIMEOUTS_BY_MASS.get(str(key), ACCEPT_TIMEOUT_S))
+
+
+def is_support_path(rel: str) -> bool:
+    rel = rel.replace("\\", "/")
+    return rel in SUPPORT_PATHS or rel.startswith(SUPPORT_PREFIXES)
+
+
 def _run_cell_process(argv: list, log_path: Path,
                       timeout_s: float = ACCEPT_TIMEOUT_S) -> dict:
     t0 = time.time()
@@ -1535,7 +1560,8 @@ def _run_cell_process(argv: list, log_path: Path,
         rc, timed_out = None, True
         raw = (exc.stdout or b"") + (exc.stderr or b"")
     log_path.write_bytes(raw)
-    return dict(rc=rc, timed_out=timed_out, started_utc=started,
+    return dict(rc=rc, timed_out=timed_out, timeout_s=float(timeout_s),
+                started_utc=started,
                 finished_utc=_now(), elapsed_s=round(time.time() - t0, 3),
                 log=str(log_path), log_sha256=sha256_bytes(raw),
                 interpreter=sys.executable)
@@ -1557,7 +1583,7 @@ def assess_cell(key: str, arch: str, stage: dict, outdir: Path,
                            ac_commit=row["provenance"].get("ac_commit")))
     if run.get("timed_out"):
         cell["cause"] = (f"timeout: la búsqueda superó "
-                         f"{ACCEPT_TIMEOUT_S:g} s")
+                         f"{run.get('timeout_s', ACCEPT_TIMEOUT_S):g} s")
         return cell
     ck = Path(outdir) / "phycb_run.json"
     cpath = Path(outdir) / "geometry" / "combustor.json"
@@ -1609,23 +1635,54 @@ def assess_cell(key: str, arch: str, stage: dict, outdir: Path,
 
 
 def _changed_since(sha: str) -> list[str]:
-    """Rutas que difieren entre `sha` y el árbol de trabajo (sin contar la
-    propia evidencia de aceptación)."""
+    """Rutas de MODELO que difieren entre `sha` y el árbol de trabajo. Las
+    rutas de soporte (`is_support_path`: arnés, pruebas, informe, evidencia
+    y generador C#) no cambian la física que ejecuta la matriz."""
     out = _git(CB_ROOT, "diff", "--name-only", sha, "--").splitlines()
     out += [ln[3:].strip() for ln in
             _git(CB_ROOT, "status", "--porcelain").splitlines() if ln.strip()]
-    return sorted({p for p in out if p and p != EVIDENCE_REL})
+    return sorted({p for p in out if p and not is_support_path(p)})
 
 
-def source_identity() -> dict:
-    """Fuente confirmada para la corrida: árbol limpio salvo la evidencia."""
+def matrix_model_source(doc: dict) -> str | None:
+    """`model_source_sha` común de las masas ya aceptadas (una revisión
+    única por matriz). Dos valores distintos son un error."""
+    shas = {m.get("model_source_sha") for m in (doc.get("masses") or {})
+            .values() if m.get("status") == "accepted"}
+    shas.discard(None)
+    if len(shas) > 1:
+        raise ScaleError(f"la matriz mezcla fuentes de modelo: {sorted(shas)}")
+    return next(iter(shas), None)
+
+
+def source_identity(doc: dict | None = None) -> dict:
+    """Fuente confirmada para la corrida: árbol limpio salvo la evidencia.
+
+    Si la matriz ya tiene masas aceptadas, la física debe ser la de su
+    `model_source_sha`: HEAD sólo puede diferir en rutas de soporte (el
+    arnés con el tope D-391, por ejemplo). Se registran ambos SHA."""
     st = git_state(CB_ROOT)
     dirty = [ln for ln in _git(CB_ROOT, "status", "--porcelain").splitlines()
              if ln.strip() and ln[3:].strip() != EVIDENCE_REL]
     if dirty:
         raise ScaleError("árbol de Phy-CB con cambios sin confirmar: "
                          f"{dirty[:5]} — confirme la fuente antes de aceptar")
-    return dict(model_source_sha=st["head"], branch=st["branch"])
+    base = matrix_model_source(doc or {})
+    if base is None:
+        return dict(model_source_sha=st["head"], harness_sha=st["head"],
+                    branch=st["branch"])
+    anc = subprocess.run(["git", "-C", str(CB_ROOT), "merge-base",
+                          "--is-ancestor", base, st["head"]], timeout=60)
+    if anc.returncode != 0:
+        raise ScaleError(f"HEAD no desciende de la fuente de la matriz {base}")
+    changed = _changed_since(base)
+    if changed:
+        raise ScaleError(
+            f"la física cambió desde la fuente de la matriz {base} "
+            f"({changed[:5]}): invalide los éxitos previos y vuelva a los "
+            "gates de ingeniería y piloto antes de ampliar la matriz")
+    return dict(model_source_sha=base, harness_sha=st["head"],
+                branch=st["branch"])
 
 
 def load_acceptance(path: Path = ACCEPTANCE_PATH) -> dict:
@@ -1638,6 +1695,8 @@ def save_acceptance(doc: dict, path: Path = ACCEPTANCE_PATH) -> None:
     import physics_core as pc
     doc.update(schema=ACCEPT_SCHEMA, recipe=ACCEPT_RECIPE,
                stages=list(ACCEPT_STAGES), timeout_s=ACCEPT_TIMEOUT_S,
+               timeouts_s=dict(ACCEPT_TIMEOUTS_BY_MASS),
+               timeout_policy=ACCEPT_TIMEOUT_POLICY,
                policy_rev=pc.SCALE_POLICY_REV)
     text = json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True,
                       allow_nan=False)
@@ -1672,37 +1731,68 @@ def _pair_comparison(cells: list[dict]) -> dict:
 
 
 def cmd_accept(args) -> int:
-    key = str(args.mass)
-    if key not in MASS_KEYS:
-        raise ScaleError(f"caudal {key} fuera de la matriz {MASS_KEYS}")
+    """`--mass` admite una lista (`5,25`): la identidad de la fuente se fija
+    UNA vez al empezar y cada caudal se guarda al terminar su par."""
+    keys = [k.strip() for k in str(args.mass).split(",") if k.strip()]
+    if not keys or len(set(keys)) != len(keys):
+        raise ScaleError(f"lista de caudales inválida: {args.mass!r}")
+    for key in keys:
+        if key not in MASS_KEYS:
+            raise ScaleError(f"caudal {key} fuera de la matriz {MASS_KEYS}")
+    doc = load_acceptance()
+    pending = []
+    rc = 0
+    for key in keys:
+        prev = doc.get("masses", {}).get(key)
+        if prev and prev.get("status") == "accepted" and not args.force:
+            changed = _changed_since(prev["model_source_sha"])
+            if changed:
+                raise ScaleError(f"la fuente cambió desde la aceptación de "
+                                 f"{key} ({changed[:5]}): use --force para "
+                                 "rehacerla")
+            print(f"[accept {key}] ya aceptado sobre "
+                  f"{prev['model_source_sha']}; se verifica sin relanzar ni "
+                  "sobrescribir")
+            rc = max(rc, _verify_masses(doc, [key]))
+        else:
+            pending.append(key)
+    if not pending:
+        return rc
+    if args.force:
+        doc.setdefault("masses", {})
+        for key in pending:
+            doc["masses"].pop(key, None)
+    ident = source_identity(doc)
+    if args.out_root is None:
+        raise ScaleError("accept necesita --out-root para lanzar la CLI")
+    for key in pending:
+        rc = max(rc, _accept_one(key, args, ident, doc))
+    return rc
+
+
+def _accept_one(key: str, args, ident: dict, doc: dict) -> int:
     pc = _import_cb()[0]
     inlets = load_inlets()
     row = inlets["inlets"].get(key)
     if row is None:
         raise ScaleError(f"no hay descarga congelada para {key} kg/s")
     check_row(key, row)
-    doc = load_acceptance()
-    prev = doc.get("masses", {}).get(key)
-    if prev and prev.get("status") == "accepted" and not args.force:
-        changed = _changed_since(prev["model_source_sha"])
-        if changed:
-            raise ScaleError(f"la fuente cambió desde la aceptación de {key} "
-                             f"({changed[:5]}): use --force para rehacerla")
-        print(f"[accept {key}] ya aceptado sobre {prev['model_source_sha']}; "
-              "se verifica sin relanzar ni sobrescribir")
-        return _verify_masses(doc, [key])
-    ident = source_identity()
-    if args.out_root is None:
-        raise ScaleError("accept necesita --out-root para lanzar la CLI")
+    timeout_s = accept_timeout_s(key)
     root = Path(args.out_root) / f"accept-{key}-{uuid.uuid4().hex[:8]}"
     root.mkdir(parents=True, exist_ok=False)
+    print(f"[accept {key}] tope {timeout_s:g} s por celda e intento "
+          f"({ACCEPT_TIMEOUT_POLICY}) · fuente de modelo "
+          f"{ident['model_source_sha'][:12]} · arnés "
+          f"{ident['harness_sha'][:12]} · {root}", flush=True)
     accepted = None
     for stage in ACCEPT_STAGES:
         cells = []
         for arch in ACCEPT_ARCHS:
             outdir = root / f"s{stage['stage']}-{arch}"
             run = _run_cell_process(_accept_argv(row, arch, stage, outdir),
-                                    root / f"s{stage['stage']}-{arch}.log")
+                                    root / f"s{stage['stage']}-{arch}.log",
+                                    timeout_s)
+            run["timeout_policy"] = ACCEPT_TIMEOUT_POLICY
             cell = assess_cell(key, arch, stage, outdir, run, row)
             cell.update(ident)
             cell["policy_rev"] = pc.SCALE_POLICY_REV
@@ -1712,14 +1802,16 @@ def cmd_accept(args) -> int:
             doc.setdefault("attempts", []).append(att)
             print(f"[accept {key}] etapa {stage['stage']} {arch}: "
                   f"{cell['status']} · {run['elapsed_s']} s"
-                  + (f" · {cell['cause']}" if cell["cause"] else ""))
+                  + (f" · {cell['cause']}" if cell["cause"] else ""),
+                  flush=True)
         if all(c["status"] == "accepted" for c in cells):
             accepted = (stage, cells)
             break
     if accepted is None:
         doc.setdefault("masses", {})[key] = dict(
             status="blocked", model_source_sha=ident["model_source_sha"],
-            finished_utc=_now(),
+            harness_sha=ident["harness_sha"], timeout_s=timeout_s,
+            timeout_policy=ACCEPT_TIMEOUT_POLICY, finished_utc=_now(),
             cause="ninguna etapa dio las dos arquitecturas aceptadas")
         save_acceptance(doc)
         print(f"[accept {key}] BLOQUEADO · evidencia en {ACCEPTANCE_PATH}")
@@ -1729,7 +1821,9 @@ def cmd_accept(args) -> int:
         doc.setdefault("cells", {})[c["key"]] = c
     doc.setdefault("masses", {})[key] = dict(
         status="accepted", stage=stage["stage"],
-        model_source_sha=ident["model_source_sha"], finished_utc=_now(),
+        model_source_sha=ident["model_source_sha"],
+        harness_sha=ident["harness_sha"], timeout_s=timeout_s,
+        timeout_policy=ACCEPT_TIMEOUT_POLICY, finished_utc=_now(),
         inlets_sha256=sha256_bytes(INLETS_PATH.read_bytes()
                                    .replace(b"\r\n", b"\n")),
         comparison=_pair_comparison(cells))
