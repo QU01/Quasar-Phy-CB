@@ -892,7 +892,10 @@ def cmd_verify_handoff(args) -> int:
             raise ScaleError(f"{rel} no está en {f['model_basis_sha']}")
         if sha256_bytes(blob.stdout) != f[k]:
             raise ScaleError(f"{k} no coincide con {rel} en el commit")
-        if sha256_file(CB_ROOT / rel) != f[k]:
+        # el digest canónico es el del blob confirmado (LF); el árbol puede
+        # llevar CRLF si core.autocrlf lo reescribe al hacer checkout.
+        work = (CB_ROOT / rel).read_bytes().replace(b"\r\n", b"\n")
+        if sha256_bytes(work) != f[k]:
             raise ScaleError(f"{rel} del árbol difiere del digest del SUMMARY")
     doc = load_inlets()
     tot = check_inlets(doc)
