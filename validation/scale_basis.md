@@ -281,3 +281,44 @@ dos semillas; el mejor verificado por ronda del intento 2 no pasa de PR 2,26.
 El fallo no depende del presupuesto (el intento 2 terminó con 82 s de
 margen): hace falta cambiar el criterio (punto del frente) o el objetivo o
 la receta, decisión que corresponde al fundador.
+
+### Compuerta de la descarga a 5 kg/s con objetivo PR 3,5 (Tarea 2, D-389)
+
+[MEDIDO-SW] D-389 (fundador, 2026-11-10): a 5 kg/s el objetivo de PR pasa de
+3,2 a 3,5; receta predefinida, topes D-387 y el mismo criterio (recomendado
+factible con PR observado en [3, 7], sin puntos del frente). Los intentos con
+objetivo 3,2 quedan como evidencia y no se reutilizan. `scale_l0.py` guarda
+`target_PR`, `target_policy: "D-389"` y `superseded_targets: [3.2]` en la
+receta y `target_rule` en la procedencia de la fila. Phy-AC `081b6d0`,
+limpio antes y después; intérprete de Phy-AC el del venv
+(`PHYCB_SCALE_AC_PYTHON`).
+
+| Intento | Receta | Tope | Resultado | SHA256 contrato · checkpoint · log |
+|---|---|---|---|---|
+| 1 (`ac-5-a1-e6a3b7793283`, 2026-11-10) | semilla 71, 320/5/14 | 150 s | rc 0 en 96,6 s, 390 evaluaciones; recomendado factible, PR 2.700909829562064 (η_pol 0,866) | `e329138e…3fba707876` · `eebc5801…80e39cc296` · `60bc1ea2…be909d927f6e` |
+| 2 (`ac-5-a2-a5a72276fa3c`, 2026-11-10) | semilla 137, 480/7/18 | 210 s | rc 0 en 131,6 s, 606 evaluaciones; recomendado factible, PR 2.6072660296604306 (η_pol 0,859) | `d36089cd…ce327157725c` · `23ec6955…e75e2a0da5e` · `648ec55b…504d6b0fe9e8` |
+
+**Gate agotado por tercera vez** (`acquire --mass 5` devuelve 2).
+
+[CÁLCULO] Diagnóstico, no evidencia de aceptación (script
+`full_feas5.py`, SHA256 `1796cddd…b6759`, salida `full_feas5.out.json`
+`f46f22fd…4fe0c9`, en el directorio de trabajo ignorado por Git):
+
+- Con la semilla 71 el recomendado es **el mismo θ** con objetivo 3,2 y 3,5
+  (mismo PR y η; sólo cambia el spec dentro del contrato). Subir el objetivo
+  no mueve la recomendación.
+- La lectura de la sección anterior era incompleta: el `g` del dataset de
+  Phy-AC sólo contiene las 9 restricciones aerodinámicas. Reevaluados con
+  `DesignSpec.constraints` completo (topes, bombeo y estructura), **ninguno**
+  de los 17 y 34 diseños con PR en [3, 7] es factible, y en todos la
+  restricción más violada es la 13, el margen de bombeo en gasto
+  (`sm_flow ≥ 0,15`). El mejor margen en banda es 13,2 % a PR 3,03 (g₁₃ =
+  +0,117) y 12,3 % a PR 3,68. El recomendador elige bien entre los factibles:
+  no hay ninguno en banda.
+- Indicio no verificado: en banda la velocidad de punta máxima es ~391 m/s
+  (tope 480) y ninguna θ pasa de 24 000 rpm (tope 25 000). A 8 kg/s se llega
+  a 447 m/s. A 5 kg/s el tope de rpm podría limitar la carga por etapa y,
+  con 8 etapas, el margen de bombeo.
+- Opciones que quedan para el fundador (todas cambian la receta común del
+  plan): bajar `sm_flow_min` a 5 kg/s, subir `rpm_max` a 5 kg/s o aceptar un
+  punto del frente. Cambiar otra vez el objetivo de PR no sirve.

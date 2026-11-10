@@ -75,7 +75,13 @@ CONTRACT_REL = "geometry/axial_compressor.json"
 AC_COMMON = dict(t0=288.15, p0=101325.0, rpm_max=25000.0, utip_max=480.0,
                  rtip_max=400.0, nstages_max=8, sm_flow_min=0.15,
                  material="Ti-6Al-4V")
-AC_TARGET_PR = {"5": 3.2, "8": 3.5}
+#: PR objetivo por caudal. D-389 (fundador, 2026-11-10): a 5 kg/s pasa de
+#: 3,2 a 3,5 tras agotar dos veces la compuerta con 3,2 (recomendados PR
+#: 2,70 y 2,40); criterio intacto: recomendado con PR observado en [3,7].
+#: Los intentos con objetivo 3,2 son evidencia y no se reutilizan.
+AC_TARGET_PR = {"5": 3.5, "8": 3.5}
+AC_TARGET_POLICY = {"5": "D-389", "8": "plan-17.1-01"}
+AC_SUPERSEDED_TARGETS = {"5": [3.2]}
 #: Intentos predefinidos por caudal: el 2.º sólo si el 1.º falla.
 AC_ATTEMPTS = (dict(seed=71, n_init=320, rounds=5, batch_size=14),
                dict(seed=137, n_init=480, rounds=7, batch_size=18))
@@ -526,7 +532,10 @@ def cmd_acquire(args) -> int:
             recipe = dict(
                 argv=["python", "-B", "-X", "utf8"] + [
                     a if a != str(outdir) else "<outdir>" for a in argv],
-                cwd="<Phy-AC>", target_PR=AC_TARGET_PR[key], common=AC_COMMON,
+                cwd="<Phy-AC>", target_PR=AC_TARGET_PR[key],
+                target_policy=AC_TARGET_POLICY[key],
+                superseded_targets=AC_SUPERSEDED_TARGETS.get(key, []),
+                common=AC_COMMON,
                 attempt=n, attempt_params=dict(att), timeout_s=timeout_s,
                 timeouts_s=list(AC_TIMEOUTS_S),
                 timeout_policy=AC_TIMEOUT_POLICY, fidelity="L0")
@@ -539,7 +548,9 @@ def cmd_acquire(args) -> int:
                 n_evals=ckpt.get("n_evals"), seed=ckpt.get("seed"),
                 python=sys.version.split()[0],
                 ac_interpreter=Path(ac_python()).as_posix(),
-                log_sha256=sha256_file(log), prior_attempts=prior)
+                log_sha256=sha256_file(log), prior_attempts=prior,
+                target_PR=AC_TARGET_PR[key],
+                target_rule=AC_TARGET_POLICY[key])
             try:
                 row = _row_from_ac_run(key, outdir, recipe, prov, raw, ckpt)
                 check_row(key, row)
