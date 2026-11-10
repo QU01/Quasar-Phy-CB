@@ -79,7 +79,11 @@ AC_TARGET_PR = {"5": 3.2, "8": 3.5}
 #: Intentos predefinidos por caudal: el 2.º sólo si el 1.º falla.
 AC_ATTEMPTS = (dict(seed=71, n_init=320, rounds=5, batch_size=14),
                dict(seed=137, n_init=480, rounds=7, batch_size=18))
-AC_TIMEOUT_S = 150.0
+#: Tope por intento. D-387 (fundador, 2026-11-10): el 1.º conserva 150 s y
+#: el 2.º predefinido sube a 210 s; criterio, receta y objetivo intactos.
+AC_TIMEOUTS_S = (150.0, 210.0)
+AC_TIMEOUT_POLICY = "D-387"
+AC_TIMEOUT_S = AC_TIMEOUTS_S[0]
 
 #: Receta del diagnóstico L0 de Phy-CB (Tarea 1 de 17.1-01).
 DIAG_RECIPE = dict(arch="annular", fidelity="L0", t4=1200.0, fuel="jet_a",
@@ -400,6 +404,57 @@ def _same_recipe(row: dict, key: str) -> bool:
             and rec.get("common") == AC_COMMON)
 
 
+def _verify_prior_attempt1(key: str, outdir: Path) -> dict:
+    """Reutiliza la evidencia de un intento 1 ya ejecutado (D-387).
+
+    Sólo vale si el directorio es de la receta exacta del intento 1 para
+    esta masa (spec, semilla, presupuesto, fidelidad, receta común) y si su
+    candidato recomendado falló el criterio (PR fuera de banda o no
+    factible). Un intento 1 que hubiera pasado no se puede saltar."""
+    att = AC_ATTEMPTS[0]
+    contract_path = outdir / CONTRACT_REL
+    ckpt_path = outdir / "phyac_run.json"
+    log = outdir / "phyac_cli.log"
+    for p in (contract_path, ckpt_path, log):
+        if not p.exists():
+            raise ScaleError(f"intento 1 previo incompleto: falta {p.name}")
+    ckpt = json.loads(ckpt_path.read_text(encoding="utf-8"))
+    raw = contract_path.read_bytes()
+    contract = json.loads(raw.decode("utf-8"))
+    spec = ckpt.get("spec") or {}
+    meta = contract.get("run_meta") or {}
+    c = AC_COMMON
+    expect = dict(PR_target=AC_TARGET_PR[key], massflow=float(key),
+                  RPM_max=c["rpm_max"], U_tip_max=c["utip_max"],
+                  r_tip_max_mm=c["rtip_max"], n_stages_max=c["nstages_max"],
+                  sm_flow_min=c["sm_flow_min"], T0_in=c["t0"], P0_in=c["p0"],
+                  material=c["material"])
+    for f, v in expect.items():
+        if spec.get(f) != v:
+            raise ScaleError(f"intento 1 previo con {f}={spec.get(f)!r}, "
+                             f"se espera {v!r}")
+    n_expected = att["n_init"] + att["rounds"] * att["batch_size"]
+    if (int(ckpt.get("seed", -1)) != att["seed"]
+            or int(ckpt.get("n_evals", -1)) != n_expected
+            or meta.get("rounds") != att["rounds"]
+            or meta.get("n_init") != att["n_init"]
+            or meta.get("fidelity") != "L0"):
+        raise ScaleError("el intento 1 previo no es de la receta predefinida")
+    pr = float(contract["derived"]["PR"])
+    feas = contract["derived"].get("feasible") is True
+    if feas and PR_BAND[0] <= pr <= PR_BAND[1]:
+        raise ScaleError("el intento 1 previo pasa el criterio: no se salta")
+    reason = (f"[{key}] PR observado {pr!r} fuera de {PR_BAND}" if feas
+              else f"[{key}] el candidato Phy-AC no es factible")
+    return dict(attempt=1, attempt_params=dict(att), timeout_s=AC_TIMEOUTS_S[0],
+                outdir_name=outdir.name, n_evals=ckpt.get("n_evals"),
+                seed=ckpt.get("seed"), recommended_PR=pr,
+                recommended_feasible=feas, contract_sha256=sha256_bytes(raw),
+                checkpoint_sha256=sha256_file(ckpt_path),
+                log_sha256=sha256_file(log), reason=reason,
+                reused="evidencia del intento 1 verificada sin relanzar (D-387)")
+
+
 def cmd_acquire(args) -> int:
     key = str(args.mass).rstrip("0").rstrip(".") if "." in str(args.mass) \
         else str(args.mass)
@@ -427,7 +482,17 @@ def cmd_acquire(args) -> int:
     out_root = Path(args.out_root).resolve()
     out_root.mkdir(parents=True, exist_ok=True)
     failures = []
+    prior = []
+    start = 1
+    if getattr(args, "prior_attempt1", None):
+        prior.append(_verify_prior_attempt1(key, Path(args.prior_attempt1)))
+        failures.append(dict(attempt=1, reason=prior[0]["reason"],
+                             outdir=str(Path(args.prior_attempt1))))
+        start = 2
     for n, att in enumerate(AC_ATTEMPTS, start=1):
+        if n < start:
+            continue
+        timeout_s = AC_TIMEOUTS_S[n - 1]
         st0 = _require_ac_pinned()
         run_id = uuid.uuid4().hex[:12]
         outdir = out_root / f"ac-{key}-a{n}-{run_id}"
@@ -440,7 +505,7 @@ def cmd_acquire(args) -> int:
                 p = subprocess.run([ac_python(), "-B", "-X", "utf8", *argv],
                                    cwd=str(AC_ROOT), stdout=fh,
                                    stderr=subprocess.STDOUT,
-                                   timeout=AC_TIMEOUT_S)
+                                   timeout=timeout_s)
             rc = p.returncode
         except subprocess.TimeoutExpired:
             rc = "timeout"
@@ -462,8 +527,9 @@ def cmd_acquire(args) -> int:
                 argv=["python", "-B", "-X", "utf8"] + [
                     a if a != str(outdir) else "<outdir>" for a in argv],
                 cwd="<Phy-AC>", target_PR=AC_TARGET_PR[key], common=AC_COMMON,
-                attempt=n, attempt_params=dict(att), timeout_s=AC_TIMEOUT_S,
-                fidelity="L0")
+                attempt=n, attempt_params=dict(att), timeout_s=timeout_s,
+                timeouts_s=list(AC_TIMEOUTS_S),
+                timeout_policy=AC_TIMEOUT_POLICY, fidelity="L0")
             prov = dict(
                 kind="acquired", repo="Phy-AC", repo_url=AC_REPO_URL,
                 ac_commit=st0["head"], branch=st0["branch"],
@@ -473,7 +539,7 @@ def cmd_acquire(args) -> int:
                 n_evals=ckpt.get("n_evals"), seed=ckpt.get("seed"),
                 python=sys.version.split()[0],
                 ac_interpreter=Path(ac_python()).as_posix(),
-                log_sha256=sha256_file(log))
+                log_sha256=sha256_file(log), prior_attempts=prior)
             try:
                 row = _row_from_ac_run(key, outdir, recipe, prov, raw, ckpt)
                 check_row(key, row)
@@ -921,6 +987,9 @@ def build_parser() -> argparse.ArgumentParser:
     a.add_argument("--mass", required=True)
     a.add_argument("--out-root", required=False, default=None)
     a.add_argument("--force", action="store_true")
+    a.add_argument("--prior-attempt1", default=None,
+                   help="outdir de un intento 1 ya ejecutado y fallido; se "
+                        "verifica y se pasa al intento 2 (D-387)")
     u = sub.add_parser("archive-uat14")
     u.add_argument("--run-dir", required=True)
     u.add_argument("--campaign", default=None)

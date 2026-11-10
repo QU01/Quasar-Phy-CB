@@ -255,3 +255,29 @@ Fase **diagnóstica**: no cuenta para la matriz de aceptación.
 }
 ```
 <!-- scale-l0:diagnose-8:end -->
+
+### Compuerta de la descarga a 5 kg/s (Tarea 2, D-387)
+
+[MEDIDO-SW] Receta común de `scale_l0.py` (objetivo PR 3,2, Phy-AC
+`081b6d0`, L0). Criterio: candidato **recomendado** exportado, factible y con
+PR observado en [3, 7]; sin elegir puntos del frente ni cambiar receta u
+objetivo. Topes por intento según D-387: 150 s el 1.º y 210 s el 2.º.
+
+| Intento | Receta | Tope | Resultado | SHA256 contrato · checkpoint · log |
+|---|---|---|---|---|
+| 1 (`ac-5-a1-87999e909c96`, 2026-11-10) | semilla 71, 320/5/14 | 150 s | rc 0 en 121,6 s, 390 evaluaciones; recomendado factible, PR 2.700909829562064 (η_pol 0,866) | `de9f4e1b…6f9bfafe` · `ddb7c93e…5eb8f16` · `12814c81…b3913e1` |
+| 2 (`ac-5-a2-1751ddb91e55`, tope 150 s anterior a D-387) | semilla 137, 480/7/18 | 150 s | timeout con 588 de 606 evaluaciones; anulado por D-387 | — |
+| 2 (`ac-5-a2-3edaddb55c2d`, 2026-11-10) | semilla 137, 480/7/18 | 210 s | rc 0 en 127,6 s, 606 evaluaciones; recomendado factible, PR 2.396008225013416 (η_pol 0,883) | `bcea4a95…b1c8b12f` · `ba8608e9…cb569b95` · `120e2a16…0b3f12ed` |
+
+El intento 2 bajo D-387 reutilizó la evidencia del intento 1 con
+`acquire --prior-attempt1`, que comprueba spec, semilla, presupuesto y
+fidelidad antes de saltarlo. **Gate agotado.**
+
+[CÁLCULO] Diagnóstico, no evidencia de aceptación: los datasets contienen 177
+y 282 diseños factibles, 16 y 24 con PR en [3, 7] (algunos a PR 3,200 con
+η 0,83–0,86; máximo factible 4,50 y 4,25). El recomendador de Phy-AC prefiere
+η frente a |PR − objetivo| y a 5 kg/s elige PR por debajo del objetivo en las
+dos semillas; el mejor verificado por ronda del intento 2 no pasa de PR 2,26.
+El fallo no depende del presupuesto (el intento 2 terminó con 82 s de
+margen): hace falta cambiar el criterio (punto del frente) o el objetivo o
+la receta, decisión que corresponde al fundador.
