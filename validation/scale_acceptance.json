@@ -1,0 +1,1154 @@
+{
+ "attempts": [
+  {
+   "arch": "annular",
+   "argv": [
+    "phycb_cli.py",
+    "--optimize",
+    "--fidelity",
+    "L0",
+    "--mdot",
+    "8.0",
+    "--p3",
+    "358961.8805265866",
+    "--t3",
+    "432.4902351398321",
+    "--t4",
+    "1200.0",
+    "--arch",
+    "annular",
+    "--fuel",
+    "jet_a",
+    "--material",
+    "Inconel-625",
+    "--material-casing",
+    "Inconel-718",
+    "--dp-max",
+    "0.04",
+    "--pf-max",
+    "0.4",
+    "--seed",
+    "71",
+    "--n-init",
+    "320",
+    "--rounds",
+    "5",
+    "--batch-size",
+    "14",
+    "--workers",
+    "1",
+    "--no-figures",
+    "--no-color",
+    "--outdir",
+    "<outdir>"
+   ],
+   "artifacts": {
+    "dataset.csv": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\dataset.csv",
+     "sha256": "eda95a590c17692a9cd3ed69aa5373b8c440cb497689ce2abcfb7802506eb521"
+    },
+    "phycb_run.json": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\phycb_run.json",
+     "sha256": "6b8fa583492005b361be07373f88df64652ebe2206c9c87760f6bba3e07fcd0e"
+    },
+    "report.html": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\report.html",
+     "sha256": "838b4dd4c3ff240f62f0ec766baa8d904f78ac4e761c12a956cd6da9cbd9c1af"
+    }
+   },
+   "branch": "main",
+   "budget": {
+    "batch_size": 14,
+    "n_init": 320,
+    "rounds": 5,
+    "seed": 71,
+    "stage": 1
+   },
+   "cause": null,
+   "contract_sha256": "ef2f9032b3bb1f61bab07955f72762994cd8903f1afe99d19e0d3078ad97d8bd",
+   "failures": [],
+   "g": [
+    -0.22157433836423446,
+    -0.24068742450129843,
+    -0.09096625529534574,
+    -0.41122757316090797,
+    -0.1507754487004076,
+    -0.611685726370176,
+    -0.25,
+    -0.581646125580237,
+    -0.013511086231646985,
+    -0.4472553382842194,
+    -0.008601164026846853,
+    -0.5262860741392544,
+    -0.25,
+    -0.1242711306597638,
+    -1.0,
+    -1.0,
+    -0.24068742450129843,
+    -0.950360525710905,
+    -0.9571361367151411,
+    -0.581646125580237,
+    -1.0,
+    -0.16666666666666663,
+    -0.013510953974366968,
+    -1.0,
+    -0.23924917174436522,
+    -0.16666666666666666
+   ],
+   "inlet": {
+    "P03_Pa": 358961.8805265866,
+    "T03_K": 432.4902351398321,
+    "ac_commit": "081b6d05d68a32b6bd8a39dcedaf6e7dc39e93c8",
+    "contract_sha256": "85c016debab3f99c9cdc4ec1896053db63482e0cceecba27a44bb3655eab1745",
+    "key": "8",
+    "mdot_kg_s": 8.0,
+    "run_id": "b5b3e67ffc28"
+   },
+   "key": "8/annular",
+   "mass": "8",
+   "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+   "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular",
+   "policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+   "raw_pf": 0.3502915477360945,
+   "run": {
+    "elapsed_s": 82.818,
+    "finished_utc": "2026-11-10T23:30:55Z",
+    "interpreter": "C:\\Python313\\python.exe",
+    "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular.log",
+    "log_sha256": "e8f9bea6e50a7a0b2fb8e662ef87998eb6052687a7fb58353ed0f78754db2e4f",
+    "rc": 0,
+    "started_utc": "2026-11-10T23:29:32Z",
+    "timed_out": false
+   },
+   "selection": {
+    "fitness": 0.9705914360587903,
+    "n_evals": 460,
+    "row_index": 70,
+    "rule": "max scalar_fitness sobre todas las evaluaciones físicas (primer máximo)"
+   },
+   "spec": {
+    "P3_Pa": 358961.8805265866,
+    "PF_max": 0.4,
+    "T3_K": 432.4902351398321,
+    "T4_K": 1200.0,
+    "arch": "annular",
+    "dfam": true,
+    "dp_max": 0.04,
+    "envelope_D_mm": null,
+    "envelope_L_mm": null,
+    "fixed_vars": {},
+    "fuel": "jet_a",
+    "material": "Inconel-625",
+    "material_casing": "Inconel-718",
+    "mdot_kgs": 8.0
+   },
+   "stage": 1,
+   "status": "accepted",
+   "theta": [
+    1.0,
+    0.717050301414331,
+    0.5081396711324385,
+    0.06740206867965273,
+    0.5694886988386746,
+    0.6654885037518782,
+    13.194244302074619,
+    12.60414746701842,
+    0.5068480679524492,
+    5.914617338639039,
+    2.1532425522669083,
+    5.692774191109365,
+    0.5782556881774864,
+    1.798572405633662,
+    1.195160438500722,
+    0.0,
+    358961.8805265866,
+    432.4902351398321,
+    8.0,
+    1200.0
+   ],
+   "verification": {
+    "P04_closure": {
+     "P03_Pa": 358961.8805265866,
+     "P04_Pa": 348193.024,
+     "dp_over_p": 0.03,
+     "residual_Pa": 0.00011078902753069997,
+     "tol_Pa": 0.0006794815779076849
+    },
+    "arch": "annular",
+    "dfam_exported": {
+     "feasible": true,
+     "g_dfam": [
+      -0.16666666666666663,
+      -0.013510953974366968,
+      -1.0,
+      -0.23924917174436522,
+      -0.16666666666666666
+     ],
+     "violations": []
+    },
+    "dims": {
+     "A_ref_mm2": 143354.103613,
+     "D_L_mm": 361.771987,
+     "D_casing_mm": 534.035511,
+     "L_tot_mm": 228.540223,
+     "PF": 0.350291548,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.978415512,
+     "tau_ms": 8.492246
+    },
+    "g_blocks": {
+     "aero": {
+      "LBO": -0.09096625529534574,
+      "M_exit": -0.611685726370176,
+      "PF": -0.22157433836423446,
+      "T_wall": -0.24068742450129843,
+      "d_eff": -0.013511086231646985,
+      "dp": -0.25,
+      "eta_comb": -0.008601164026846853,
+      "mixing": -0.5262860741392544,
+      "phi_pz_rich": -0.4472553382842194,
+      "t_liner": -0.581646125580237,
+      "tau_max": -0.1507754487004076,
+      "tau_min": -0.41122757316090797
+     },
+     "dfam": {
+      "d_hole_min": -0.013510953974366968,
+      "drainability": -0.23924917174436522,
+      "effusion_band": -0.16666666666666666,
+      "overhang": -1.0,
+      "t_min": -0.16666666666666663
+     },
+     "spec": {
+      "spec_PF_max": -0.1242711306597638,
+      "spec_dp_max": -0.25,
+      "spec_envelope_D": -1.0,
+      "spec_envelope_L": -1.0
+     },
+     "struct": {
+      "T_wall": -0.24068742450129843,
+      "banned": -1.0,
+      "hoop": -0.9571361367151411,
+      "sigma_th": -0.950360525710905,
+      "t_wall": -0.581646125580237
+     }
+    },
+    "mdot_out": {
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.184921118,
+     "mdot_out_kgs": 8.184921118,
+     "residual_kgs": 0.0
+    },
+    "raw_pf": 0.3502915477360945,
+    "record": {
+     "D_L_mm": 361.771987149798,
+     "D_casing_mm": 534.0355114883429,
+     "EI_NOx": 3.9120381244901146,
+     "LBO_margin": 0.32008300790844757,
+     "L_tot_mm": 228.5402233239542,
+     "P04_Pa": 348193.024110789,
+     "PF": 0.3502915477360945,
+     "T04_K": 1200.0,
+     "T_wall_max_K": 913.453028324938,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.9784155123077705,
+     "fidelity_achieved": "L0",
+     "h_L_mm": 79.44173786942893,
+     "mdot4_kgs": 8.184921118398988,
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.1849211183989872,
+     "operating_class": "annular_5_25",
+     "phi_pz": 0.7738425264020928,
+     "scale_policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+     "source": "correlations_L0",
+     "tau_max_ms_applied": 10.0,
+     "tau_ms": 8.492245512995924
+    }
+   }
+  },
+  {
+   "arch": "reverse_annular",
+   "argv": [
+    "phycb_cli.py",
+    "--optimize",
+    "--fidelity",
+    "L0",
+    "--mdot",
+    "8.0",
+    "--p3",
+    "358961.8805265866",
+    "--t3",
+    "432.4902351398321",
+    "--t4",
+    "1200.0",
+    "--arch",
+    "reverse_annular",
+    "--fuel",
+    "jet_a",
+    "--material",
+    "Inconel-625",
+    "--material-casing",
+    "Inconel-718",
+    "--dp-max",
+    "0.04",
+    "--pf-max",
+    "0.4",
+    "--seed",
+    "71",
+    "--n-init",
+    "320",
+    "--rounds",
+    "5",
+    "--batch-size",
+    "14",
+    "--workers",
+    "1",
+    "--no-figures",
+    "--no-color",
+    "--outdir",
+    "<outdir>"
+   ],
+   "artifacts": {
+    "dataset.csv": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\dataset.csv",
+     "sha256": "64d72b5d953a1c86b67acf018d5b729474a3ddd46f500d2e03e8b2a7f1a0cb4d"
+    },
+    "phycb_run.json": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\phycb_run.json",
+     "sha256": "7c79355bd9bbe6789fdb3e6a13534813e576cdadc65d59178540762b786ddcc0"
+    },
+    "report.html": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\report.html",
+     "sha256": "258bc6bd188ccf05aec18c5d4b2ffa63cff96e44bb21e2ab3111c3f162ca65f3"
+    }
+   },
+   "branch": "main",
+   "budget": {
+    "batch_size": 14,
+    "n_init": 320,
+    "rounds": 5,
+    "seed": 71,
+    "stage": 1
+   },
+   "cause": null,
+   "contract_sha256": "f299fb76229470d9d49b7df11989dfdc67a796083d67c2c9310e12c6ac5e1205",
+   "failures": [],
+   "g": [
+    -0.22157433836423446,
+    -0.24068742450129843,
+    -0.09096625529534574,
+    -0.41122757316090797,
+    -0.1507754487004076,
+    -0.611685726370176,
+    -0.25,
+    -0.581646125580237,
+    -0.013511086231646985,
+    -0.4472553382842194,
+    -0.008601164026846853,
+    -0.5262860741392544,
+    -0.25,
+    -0.1242711306597638,
+    -1.0,
+    -1.0,
+    -0.24068742450129843,
+    -0.950360525710905,
+    -0.9571361367151411,
+    -0.581646125580237,
+    -1.0,
+    -0.16666666666666663,
+    -0.013510953974366968,
+    -0.2222222133322202,
+    -0.24476490538651197,
+    -0.16666666666666666
+   ],
+   "inlet": {
+    "P03_Pa": 358961.8805265866,
+    "T03_K": 432.4902351398321,
+    "ac_commit": "081b6d05d68a32b6bd8a39dcedaf6e7dc39e93c8",
+    "contract_sha256": "85c016debab3f99c9cdc4ec1896053db63482e0cceecba27a44bb3655eab1745",
+    "key": "8",
+    "mdot_kg_s": 8.0,
+    "run_id": "b5b3e67ffc28"
+   },
+   "key": "8/reverse_annular",
+   "mass": "8",
+   "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+   "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular",
+   "policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+   "raw_pf": 0.3502915477360945,
+   "run": {
+    "elapsed_s": 79.239,
+    "finished_utc": "2026-11-10T23:32:18Z",
+    "interpreter": "C:\\Python313\\python.exe",
+    "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular.log",
+    "log_sha256": "dee0e739c731e392ca230b9ad261dd0e2e5e9953e2983b204723c73276be1171",
+    "rc": 0,
+    "started_utc": "2026-11-10T23:30:59Z",
+    "timed_out": false
+   },
+   "selection": {
+    "fitness": 0.9705914360587903,
+    "n_evals": 460,
+    "row_index": 70,
+    "rule": "max scalar_fitness sobre todas las evaluaciones físicas (primer máximo)"
+   },
+   "spec": {
+    "P3_Pa": 358961.8805265866,
+    "PF_max": 0.4,
+    "T3_K": 432.4902351398321,
+    "T4_K": 1200.0,
+    "arch": "reverse_annular",
+    "dfam": true,
+    "dp_max": 0.04,
+    "envelope_D_mm": null,
+    "envelope_L_mm": null,
+    "fixed_vars": {},
+    "fuel": "jet_a",
+    "material": "Inconel-625",
+    "material_casing": "Inconel-718",
+    "mdot_kgs": 8.0
+   },
+   "stage": 1,
+   "status": "accepted",
+   "theta": [
+    2.0,
+    0.717050301414331,
+    0.5081396711324385,
+    0.06740206867965273,
+    0.5694886988386746,
+    0.6654885037518782,
+    13.194244302074619,
+    12.60414746701842,
+    0.5068480679524492,
+    5.914617338639039,
+    2.1532425522669083,
+    5.692774191109365,
+    0.5782556881774864,
+    1.798572405633662,
+    1.195160438500722,
+    0.0,
+    358961.8805265866,
+    432.4902351398321,
+    8.0,
+    1200.0
+   ],
+   "verification": {
+    "P04_closure": {
+     "P03_Pa": 358961.8805265866,
+     "P04_Pa": 348193.024,
+     "dp_over_p": 0.03,
+     "residual_Pa": 0.00011078902753069997,
+     "tol_Pa": 0.0006794815779076849
+    },
+    "arch": "reverse_annular",
+    "dfam_exported": {
+     "feasible": true,
+     "g_dfam": [
+      -0.16666666666666663,
+      -0.013510953974366968,
+      -0.2222222133322202,
+      -0.24476490538651197,
+      -0.16666666666666666
+     ],
+     "violations": []
+    },
+    "dims": {
+     "A_ref_mm2": 143354.103613,
+     "D_L_mm": 361.771987,
+     "D_casing_mm": 534.035511,
+     "L_tot_mm": 228.540223,
+     "PF": 0.350291548,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.978415512,
+     "tau_ms": 8.492246
+    },
+    "g_blocks": {
+     "aero": {
+      "LBO": -0.09096625529534574,
+      "M_exit": -0.611685726370176,
+      "PF": -0.22157433836423446,
+      "T_wall": -0.24068742450129843,
+      "d_eff": -0.013511086231646985,
+      "dp": -0.25,
+      "eta_comb": -0.008601164026846853,
+      "mixing": -0.5262860741392544,
+      "phi_pz_rich": -0.4472553382842194,
+      "t_liner": -0.581646125580237,
+      "tau_max": -0.1507754487004076,
+      "tau_min": -0.41122757316090797
+     },
+     "dfam": {
+      "d_hole_min": -0.013510953974366968,
+      "drainability": -0.24476490538651197,
+      "effusion_band": -0.16666666666666666,
+      "overhang": -0.2222222133322202,
+      "t_min": -0.16666666666666663
+     },
+     "spec": {
+      "spec_PF_max": -0.1242711306597638,
+      "spec_dp_max": -0.25,
+      "spec_envelope_D": -1.0,
+      "spec_envelope_L": -1.0
+     },
+     "struct": {
+      "T_wall": -0.24068742450129843,
+      "banned": -1.0,
+      "hoop": -0.9571361367151411,
+      "sigma_th": -0.950360525710905,
+      "t_wall": -0.581646125580237
+     }
+    },
+    "mdot_out": {
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.184921118,
+     "mdot_out_kgs": 8.184921118,
+     "residual_kgs": 0.0
+    },
+    "raw_pf": 0.3502915477360945,
+    "record": {
+     "D_L_mm": 361.771987149798,
+     "D_casing_mm": 534.0355114883429,
+     "EI_NOx": 3.9120381244901146,
+     "LBO_margin": 0.32008300790844757,
+     "L_tot_mm": 228.5402233239542,
+     "P04_Pa": 348193.024110789,
+     "PF": 0.3502915477360945,
+     "T04_K": 1200.0,
+     "T_wall_max_K": 913.453028324938,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.9784155123077705,
+     "fidelity_achieved": "L0",
+     "h_L_mm": 79.44173786942893,
+     "mdot4_kgs": 8.184921118398988,
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.1849211183989872,
+     "operating_class": "annular_5_25",
+     "phi_pz": 0.7738425264020928,
+     "scale_policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+     "source": "correlations_L0",
+     "tau_max_ms_applied": 10.0,
+     "tau_ms": 8.492245512995924
+    }
+   }
+  }
+ ],
+ "cells": {
+  "8/annular": {
+   "arch": "annular",
+   "argv": [
+    "phycb_cli.py",
+    "--optimize",
+    "--fidelity",
+    "L0",
+    "--mdot",
+    "8.0",
+    "--p3",
+    "358961.8805265866",
+    "--t3",
+    "432.4902351398321",
+    "--t4",
+    "1200.0",
+    "--arch",
+    "annular",
+    "--fuel",
+    "jet_a",
+    "--material",
+    "Inconel-625",
+    "--material-casing",
+    "Inconel-718",
+    "--dp-max",
+    "0.04",
+    "--pf-max",
+    "0.4",
+    "--seed",
+    "71",
+    "--n-init",
+    "320",
+    "--rounds",
+    "5",
+    "--batch-size",
+    "14",
+    "--workers",
+    "1",
+    "--no-figures",
+    "--no-color",
+    "--outdir",
+    "<outdir>"
+   ],
+   "artifacts": {
+    "dataset.csv": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\dataset.csv",
+     "sha256": "eda95a590c17692a9cd3ed69aa5373b8c440cb497689ce2abcfb7802506eb521"
+    },
+    "phycb_run.json": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\phycb_run.json",
+     "sha256": "6b8fa583492005b361be07373f88df64652ebe2206c9c87760f6bba3e07fcd0e"
+    },
+    "report.html": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular\\report.html",
+     "sha256": "838b4dd4c3ff240f62f0ec766baa8d904f78ac4e761c12a956cd6da9cbd9c1af"
+    }
+   },
+   "branch": "main",
+   "budget": {
+    "batch_size": 14,
+    "n_init": 320,
+    "rounds": 5,
+    "seed": 71,
+    "stage": 1
+   },
+   "cause": null,
+   "contract": {
+    "data": "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",
+    "encoding": "lzma+base64",
+    "sha256": "ef2f9032b3bb1f61bab07955f72762994cd8903f1afe99d19e0d3078ad97d8bd",
+    "size_bytes": 13837
+   },
+   "failures": [],
+   "g": [
+    -0.22157433836423446,
+    -0.24068742450129843,
+    -0.09096625529534574,
+    -0.41122757316090797,
+    -0.1507754487004076,
+    -0.611685726370176,
+    -0.25,
+    -0.581646125580237,
+    -0.013511086231646985,
+    -0.4472553382842194,
+    -0.008601164026846853,
+    -0.5262860741392544,
+    -0.25,
+    -0.1242711306597638,
+    -1.0,
+    -1.0,
+    -0.24068742450129843,
+    -0.950360525710905,
+    -0.9571361367151411,
+    -0.581646125580237,
+    -1.0,
+    -0.16666666666666663,
+    -0.013510953974366968,
+    -1.0,
+    -0.23924917174436522,
+    -0.16666666666666666
+   ],
+   "inlet": {
+    "P03_Pa": 358961.8805265866,
+    "T03_K": 432.4902351398321,
+    "ac_commit": "081b6d05d68a32b6bd8a39dcedaf6e7dc39e93c8",
+    "contract_sha256": "85c016debab3f99c9cdc4ec1896053db63482e0cceecba27a44bb3655eab1745",
+    "key": "8",
+    "mdot_kg_s": 8.0,
+    "run_id": "b5b3e67ffc28"
+   },
+   "key": "8/annular",
+   "mass": "8",
+   "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+   "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular",
+   "policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+   "raw_pf": 0.3502915477360945,
+   "run": {
+    "elapsed_s": 82.818,
+    "finished_utc": "2026-11-10T23:30:55Z",
+    "interpreter": "C:\\Python313\\python.exe",
+    "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-annular.log",
+    "log_sha256": "e8f9bea6e50a7a0b2fb8e662ef87998eb6052687a7fb58353ed0f78754db2e4f",
+    "rc": 0,
+    "started_utc": "2026-11-10T23:29:32Z",
+    "timed_out": false
+   },
+   "selection": {
+    "fitness": 0.9705914360587903,
+    "n_evals": 460,
+    "row_index": 70,
+    "rule": "max scalar_fitness sobre todas las evaluaciones físicas (primer máximo)"
+   },
+   "spec": {
+    "P3_Pa": 358961.8805265866,
+    "PF_max": 0.4,
+    "T3_K": 432.4902351398321,
+    "T4_K": 1200.0,
+    "arch": "annular",
+    "dfam": true,
+    "dp_max": 0.04,
+    "envelope_D_mm": null,
+    "envelope_L_mm": null,
+    "fixed_vars": {},
+    "fuel": "jet_a",
+    "material": "Inconel-625",
+    "material_casing": "Inconel-718",
+    "mdot_kgs": 8.0
+   },
+   "stage": 1,
+   "status": "accepted",
+   "theta": [
+    1.0,
+    0.717050301414331,
+    0.5081396711324385,
+    0.06740206867965273,
+    0.5694886988386746,
+    0.6654885037518782,
+    13.194244302074619,
+    12.60414746701842,
+    0.5068480679524492,
+    5.914617338639039,
+    2.1532425522669083,
+    5.692774191109365,
+    0.5782556881774864,
+    1.798572405633662,
+    1.195160438500722,
+    0.0,
+    358961.8805265866,
+    432.4902351398321,
+    8.0,
+    1200.0
+   ],
+   "verification": {
+    "P04_closure": {
+     "P03_Pa": 358961.8805265866,
+     "P04_Pa": 348193.024,
+     "dp_over_p": 0.03,
+     "residual_Pa": 0.00011078902753069997,
+     "tol_Pa": 0.0006794815779076849
+    },
+    "arch": "annular",
+    "dfam_exported": {
+     "feasible": true,
+     "g_dfam": [
+      -0.16666666666666663,
+      -0.013510953974366968,
+      -1.0,
+      -0.23924917174436522,
+      -0.16666666666666666
+     ],
+     "violations": []
+    },
+    "dims": {
+     "A_ref_mm2": 143354.103613,
+     "D_L_mm": 361.771987,
+     "D_casing_mm": 534.035511,
+     "L_tot_mm": 228.540223,
+     "PF": 0.350291548,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.978415512,
+     "tau_ms": 8.492246
+    },
+    "g_blocks": {
+     "aero": {
+      "LBO": -0.09096625529534574,
+      "M_exit": -0.611685726370176,
+      "PF": -0.22157433836423446,
+      "T_wall": -0.24068742450129843,
+      "d_eff": -0.013511086231646985,
+      "dp": -0.25,
+      "eta_comb": -0.008601164026846853,
+      "mixing": -0.5262860741392544,
+      "phi_pz_rich": -0.4472553382842194,
+      "t_liner": -0.581646125580237,
+      "tau_max": -0.1507754487004076,
+      "tau_min": -0.41122757316090797
+     },
+     "dfam": {
+      "d_hole_min": -0.013510953974366968,
+      "drainability": -0.23924917174436522,
+      "effusion_band": -0.16666666666666666,
+      "overhang": -1.0,
+      "t_min": -0.16666666666666663
+     },
+     "spec": {
+      "spec_PF_max": -0.1242711306597638,
+      "spec_dp_max": -0.25,
+      "spec_envelope_D": -1.0,
+      "spec_envelope_L": -1.0
+     },
+     "struct": {
+      "T_wall": -0.24068742450129843,
+      "banned": -1.0,
+      "hoop": -0.9571361367151411,
+      "sigma_th": -0.950360525710905,
+      "t_wall": -0.581646125580237
+     }
+    },
+    "mdot_out": {
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.184921118,
+     "mdot_out_kgs": 8.184921118,
+     "residual_kgs": 0.0
+    },
+    "raw_pf": 0.3502915477360945,
+    "record": {
+     "D_L_mm": 361.771987149798,
+     "D_casing_mm": 534.0355114883429,
+     "EI_NOx": 3.9120381244901146,
+     "LBO_margin": 0.32008300790844757,
+     "L_tot_mm": 228.5402233239542,
+     "P04_Pa": 348193.024110789,
+     "PF": 0.3502915477360945,
+     "T04_K": 1200.0,
+     "T_wall_max_K": 913.453028324938,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.9784155123077705,
+     "fidelity_achieved": "L0",
+     "h_L_mm": 79.44173786942893,
+     "mdot4_kgs": 8.184921118398988,
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.1849211183989872,
+     "operating_class": "annular_5_25",
+     "phi_pz": 0.7738425264020928,
+     "scale_policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+     "source": "correlations_L0",
+     "tau_max_ms_applied": 10.0,
+     "tau_ms": 8.492245512995924
+    }
+   }
+  },
+  "8/reverse_annular": {
+   "arch": "reverse_annular",
+   "argv": [
+    "phycb_cli.py",
+    "--optimize",
+    "--fidelity",
+    "L0",
+    "--mdot",
+    "8.0",
+    "--p3",
+    "358961.8805265866",
+    "--t3",
+    "432.4902351398321",
+    "--t4",
+    "1200.0",
+    "--arch",
+    "reverse_annular",
+    "--fuel",
+    "jet_a",
+    "--material",
+    "Inconel-625",
+    "--material-casing",
+    "Inconel-718",
+    "--dp-max",
+    "0.04",
+    "--pf-max",
+    "0.4",
+    "--seed",
+    "71",
+    "--n-init",
+    "320",
+    "--rounds",
+    "5",
+    "--batch-size",
+    "14",
+    "--workers",
+    "1",
+    "--no-figures",
+    "--no-color",
+    "--outdir",
+    "<outdir>"
+   ],
+   "artifacts": {
+    "dataset.csv": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\dataset.csv",
+     "sha256": "64d72b5d953a1c86b67acf018d5b729474a3ddd46f500d2e03e8b2a7f1a0cb4d"
+    },
+    "phycb_run.json": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\phycb_run.json",
+     "sha256": "7c79355bd9bbe6789fdb3e6a13534813e576cdadc65d59178540762b786ddcc0"
+    },
+    "report.html": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular\\report.html",
+     "sha256": "258bc6bd188ccf05aec18c5d4b2ffa63cff96e44bb21e2ab3111c3f162ca65f3"
+    }
+   },
+   "branch": "main",
+   "budget": {
+    "batch_size": 14,
+    "n_init": 320,
+    "rounds": 5,
+    "seed": 71,
+    "stage": 1
+   },
+   "cause": null,
+   "contract": {
+    "data": "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",
+    "encoding": "lzma+base64",
+    "sha256": "f299fb76229470d9d49b7df11989dfdc67a796083d67c2c9310e12c6ac5e1205",
+    "size_bytes": 15026
+   },
+   "failures": [],
+   "g": [
+    -0.22157433836423446,
+    -0.24068742450129843,
+    -0.09096625529534574,
+    -0.41122757316090797,
+    -0.1507754487004076,
+    -0.611685726370176,
+    -0.25,
+    -0.581646125580237,
+    -0.013511086231646985,
+    -0.4472553382842194,
+    -0.008601164026846853,
+    -0.5262860741392544,
+    -0.25,
+    -0.1242711306597638,
+    -1.0,
+    -1.0,
+    -0.24068742450129843,
+    -0.950360525710905,
+    -0.9571361367151411,
+    -0.581646125580237,
+    -1.0,
+    -0.16666666666666663,
+    -0.013510953974366968,
+    -0.2222222133322202,
+    -0.24476490538651197,
+    -0.16666666666666666
+   ],
+   "inlet": {
+    "P03_Pa": 358961.8805265866,
+    "T03_K": 432.4902351398321,
+    "ac_commit": "081b6d05d68a32b6bd8a39dcedaf6e7dc39e93c8",
+    "contract_sha256": "85c016debab3f99c9cdc4ec1896053db63482e0cceecba27a44bb3655eab1745",
+    "key": "8",
+    "mdot_kg_s": 8.0,
+    "run_id": "b5b3e67ffc28"
+   },
+   "key": "8/reverse_annular",
+   "mass": "8",
+   "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+   "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular",
+   "policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+   "raw_pf": 0.3502915477360945,
+   "run": {
+    "elapsed_s": 79.239,
+    "finished_utc": "2026-11-10T23:32:18Z",
+    "interpreter": "C:\\Python313\\python.exe",
+    "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\accept-8-1f619ab3\\s1-reverse_annular.log",
+    "log_sha256": "dee0e739c731e392ca230b9ad261dd0e2e5e9953e2983b204723c73276be1171",
+    "rc": 0,
+    "started_utc": "2026-11-10T23:30:59Z",
+    "timed_out": false
+   },
+   "selection": {
+    "fitness": 0.9705914360587903,
+    "n_evals": 460,
+    "row_index": 70,
+    "rule": "max scalar_fitness sobre todas las evaluaciones físicas (primer máximo)"
+   },
+   "spec": {
+    "P3_Pa": 358961.8805265866,
+    "PF_max": 0.4,
+    "T3_K": 432.4902351398321,
+    "T4_K": 1200.0,
+    "arch": "reverse_annular",
+    "dfam": true,
+    "dp_max": 0.04,
+    "envelope_D_mm": null,
+    "envelope_L_mm": null,
+    "fixed_vars": {},
+    "fuel": "jet_a",
+    "material": "Inconel-625",
+    "material_casing": "Inconel-718",
+    "mdot_kgs": 8.0
+   },
+   "stage": 1,
+   "status": "accepted",
+   "theta": [
+    2.0,
+    0.717050301414331,
+    0.5081396711324385,
+    0.06740206867965273,
+    0.5694886988386746,
+    0.6654885037518782,
+    13.194244302074619,
+    12.60414746701842,
+    0.5068480679524492,
+    5.914617338639039,
+    2.1532425522669083,
+    5.692774191109365,
+    0.5782556881774864,
+    1.798572405633662,
+    1.195160438500722,
+    0.0,
+    358961.8805265866,
+    432.4902351398321,
+    8.0,
+    1200.0
+   ],
+   "verification": {
+    "P04_closure": {
+     "P03_Pa": 358961.8805265866,
+     "P04_Pa": 348193.024,
+     "dp_over_p": 0.03,
+     "residual_Pa": 0.00011078902753069997,
+     "tol_Pa": 0.0006794815779076849
+    },
+    "arch": "reverse_annular",
+    "dfam_exported": {
+     "feasible": true,
+     "g_dfam": [
+      -0.16666666666666663,
+      -0.013510953974366968,
+      -0.2222222133322202,
+      -0.24476490538651197,
+      -0.16666666666666666
+     ],
+     "violations": []
+    },
+    "dims": {
+     "A_ref_mm2": 143354.103613,
+     "D_L_mm": 361.771987,
+     "D_casing_mm": 534.035511,
+     "L_tot_mm": 228.540223,
+     "PF": 0.350291548,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.978415512,
+     "tau_ms": 8.492246
+    },
+    "g_blocks": {
+     "aero": {
+      "LBO": -0.09096625529534574,
+      "M_exit": -0.611685726370176,
+      "PF": -0.22157433836423446,
+      "T_wall": -0.24068742450129843,
+      "d_eff": -0.013511086231646985,
+      "dp": -0.25,
+      "eta_comb": -0.008601164026846853,
+      "mixing": -0.5262860741392544,
+      "phi_pz_rich": -0.4472553382842194,
+      "t_liner": -0.581646125580237,
+      "tau_max": -0.1507754487004076,
+      "tau_min": -0.41122757316090797
+     },
+     "dfam": {
+      "d_hole_min": -0.013510953974366968,
+      "drainability": -0.24476490538651197,
+      "effusion_band": -0.16666666666666666,
+      "overhang": -0.2222222133322202,
+      "t_min": -0.16666666666666663
+     },
+     "spec": {
+      "spec_PF_max": -0.1242711306597638,
+      "spec_dp_max": -0.25,
+      "spec_envelope_D": -1.0,
+      "spec_envelope_L": -1.0
+     },
+     "struct": {
+      "T_wall": -0.24068742450129843,
+      "banned": -1.0,
+      "hoop": -0.9571361367151411,
+      "sigma_th": -0.950360525710905,
+      "t_wall": -0.581646125580237
+     }
+    },
+    "mdot_out": {
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.184921118,
+     "mdot_out_kgs": 8.184921118,
+     "residual_kgs": 0.0
+    },
+    "raw_pf": 0.3502915477360945,
+    "record": {
+     "D_L_mm": 361.771987149798,
+     "D_casing_mm": 534.0355114883429,
+     "EI_NOx": 3.9120381244901146,
+     "LBO_margin": 0.32008300790844757,
+     "L_tot_mm": 228.5402233239542,
+     "P04_Pa": 348193.024110789,
+     "PF": 0.3502915477360945,
+     "T04_K": 1200.0,
+     "T_wall_max_K": 913.453028324938,
+     "dp_over_p": 0.03,
+     "eta_comb": 0.9784155123077705,
+     "fidelity_achieved": "L0",
+     "h_L_mm": 79.44173786942893,
+     "mdot4_kgs": 8.184921118398988,
+     "mdot_air_kgs": 8.0,
+     "mdot_fuel_kgs": 0.1849211183989872,
+     "operating_class": "annular_5_25",
+     "phi_pz": 0.7738425264020928,
+     "scale_policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+     "source": "correlations_L0",
+     "tau_max_ms_applied": 10.0,
+     "tau_ms": 8.492245512995924
+    }
+   }
+  }
+ },
+ "masses": {
+  "8": {
+   "comparison": {
+    "note": "En L0 ambas anulares usan la misma física: los g aerodinámicos y el θ salvo la gate coinciden; sólo el contrato y el generador las distinguen (D-377).",
+    "rows": {
+     "annular": {
+      "D_casing_mm": 534.0355114883429,
+      "L_tot_mm": 228.5402233239542,
+      "P04_Pa": 348193.024110789,
+      "PF": 0.3502915477360945,
+      "T04_K": 1200.0,
+      "dp_over_p": 0.03,
+      "elapsed_s": 82.818,
+      "eta_comb": 0.9784155123077705,
+      "g_max": -0.008601164026846853,
+      "g_min_margin_name": "eta_comb",
+      "mdot_out_kgs": 8.184921118,
+      "n_evals": 460,
+      "tau_ms": 8.492245512995924
+     },
+     "reverse_annular": {
+      "D_casing_mm": 534.0355114883429,
+      "L_tot_mm": 228.5402233239542,
+      "P04_Pa": 348193.024110789,
+      "PF": 0.3502915477360945,
+      "T04_K": 1200.0,
+      "dp_over_p": 0.03,
+      "elapsed_s": 79.239,
+      "eta_comb": 0.9784155123077705,
+      "g_max": -0.008601164026846853,
+      "g_min_margin_name": "eta_comb",
+      "mdot_out_kgs": 8.184921118,
+      "n_evals": 460,
+      "tau_ms": 8.492245512995924
+     }
+    },
+    "same_aero_g": true,
+    "same_theta_except_arch": true
+   },
+   "finished_utc": "2026-11-10T23:32:22Z",
+   "inlets_sha256": "75cc65ee46115a6be99c60813847590582d7127a409a3c65dcf08f6eac0d3d09",
+   "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+   "stage": 1,
+   "status": "accepted"
+  }
+ },
+ "policy_rev": "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)",
+ "recipe": {
+  "dfam": true,
+  "dp_max": 0.04,
+  "fidelity": "L0",
+  "figures": false,
+  "fuel": "jet_a",
+  "material": "Inconel-625",
+  "material_casing": "Inconel-718",
+  "pf_max": 0.4,
+  "t4": 1200.0,
+  "t4_max": 1250.0,
+  "workers": 1
+ },
+ "schema": "phycb.scale_acceptance/1",
+ "stages": [
+  {
+   "batch_size": 14,
+   "n_init": 320,
+   "rounds": 5,
+   "seed": 71,
+   "stage": 1
+  },
+  {
+   "batch_size": 18,
+   "n_init": 480,
+   "rounds": 7,
+   "seed": 137,
+   "stage": 2
+  }
+ ],
+ "timeout_s": 120.0
+}
