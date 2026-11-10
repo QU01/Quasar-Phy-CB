@@ -198,6 +198,11 @@ SWIRLER_A_OVER_AREF = 0.14   # A_sw/A_ref de RESPALDO cuando el record no
 #                            casar con la pérdida que cobra la física).
 INJ_SPACING_FACTOR = 1.25  # (Ø punta del swirler)·factor = paso mínimo entre
 #                            inyectores sobre el anillo del domo.
+CUP_PITCH_OVER_H = 1.0     # clase de escala (fase 17.1, D-388): paso de copa
+#                            en el anillo del domo / altura de la corona h_L.
+#                            Transferencia vetable (banda 0,8–1,5): replica
+#                            sectores con la circunferencia. Ver
+#                            validation/scale_basis.md.
 N_INJ_ANNULAR_DEFAULT = 8  # inyectores de una anular cuando la física no los
 #                            fija. ⚠️ banda 6–12 en microturbinas (KJ66: 6).
 
@@ -913,13 +918,24 @@ def _z_of_s(geo: dict, s: float) -> float:
 # ==========================================================================
 # 5. Swirler, inyectores, filas de orificios, efusión y drenaje
 # ==========================================================================
-def _injector_count(record: dict, gates: dict) -> int:
+def _injector_count(record: dict, gates: dict, geo: dict | None = None) -> int:
     """Nº de inyectores: el del record (`atomizer.n_tubes` del vaporizador
-    KJ66) si está; si no, 1 en `can` y `N_INJ_ANNULAR_DEFAULT` en anular."""
+    KJ66) si está; si no, 1 en `can` y `N_INJ_ANNULAR_DEFAULT` en anular.
+    En la clase de escala (`combustor_class == "scale"`) una copa por
+    sector de paso `CUP_PITCH_OVER_H·h_L` sobre el radio medio de la corona,
+    con `N_INJ_ANNULAR_DEFAULT` como mínimo (D-388)."""
     atom = _rget(record, "atomizer", {})
     n = _num(atom.get("n_tubes")) if isinstance(atom, dict) else None
     if n is None:
         n = 1.0 if gates["arch"] == "can" else float(N_INJ_ANNULAR_DEFAULT)
+        if (gates["arch"] != "can" and geo is not None
+                and _rget(record, "combustor_class") == "scale"):
+            h = geo["r_outer_mm"] - geo["r_inner_mm"]
+            r_m = 0.5 * (geo["r_outer_mm"] + geo["r_inner_mm"])
+            if h > 1e-6:
+                n = max(float(N_INJ_ANNULAR_DEFAULT),
+                        float(round(2.0 * math.pi * r_m
+                                    / (CUP_PITCH_OVER_H * h))))
     return int(min(max(round(n), 1), 64))
 
 
@@ -1416,7 +1432,7 @@ def build_contract(theta, record: dict, structural: dict | None = None,
     geo = _geometry(dm, w, gates)
     notes += geo["notes"]
 
-    n_inj = _injector_count(record, gates)
+    n_inj = _injector_count(record, gates, geo)
     swirler = _swirler(record, dm, geo, n_inj, notes)
     injectors = _injectors(record, dm, geo, w, gates, swirler, n_inj, notes)
     rows = _hole_rows(record, dm, geo, notes)
@@ -1465,7 +1481,16 @@ def build_contract(theta, record: dict, structural: dict | None = None,
             L_pz_mm=_r(dm["L_pz_mm"]), L_sz_mm=_r(dm["L_sz_mm"]),
             L_dz_mm=_r(dm["L_dz_mm"]), L_tot_mm=_r(dm["L_tot_mm"]),
             feasible=bool(_rget(record, "feasible", False)),
-            source=str(_rget(record, "source", "correlations_L0"))),
+            source=str(_rget(record, "source", "correlations_L0")),
+            # clase de combustor y límite de τ aplicados (fase 17.1, D-373)
+            combustor_class=str(_rget(record, "combustor_class", "micro")),
+            length_basis=str(_rget(record, "length_basis",
+                                   "equivalent_diameter")),
+            D_T_mm=_r(_rnum(record, "D_T_mm", dm["D_L_mm"])),
+            tau_max_ms_applied=_rnum(record, "tau_max_ms_applied"),
+            tau_min_ms_applied=_rnum(record, "tau_min_ms_applied"),
+            lbo_law=_rget(record, "lbo_law"),
+            scale_policy_rev=_rget(record, "scale_policy_rev")),
         liner=dict(
             profile=geo["liner"], t_wall_mm=_r(w["t_liner_mm"]),
             material=w["material_liner"], fillet_r_mm=_r(w["fillet_r_mm"]),

@@ -14,6 +14,7 @@
   "A_ref_chem_m2": 0.00319994210616035,
   "A_ref_m2": 0.0033351693610170186,
   "D_L_mm": 54.52090115896087,
+  "D_T_mm": 54.52090115896087,
   "D_casing_mm": 81.45617608985341,
   "D_ref_mm": 65.16494087188273,
   "EI_CO": 57.56788156631442,
@@ -59,6 +60,7 @@
    60.0
   ],
   "J_dz": 7.721336608364194,
+  "LBO_load_intensive": 408.53040601431377,
   "LBO_margin": 0.998479564891984,
   "LBO_margin_def": "LBO_margin = phi_pz/phi_LBO - 1 (exceso relativo; 0 = justo en el limite de extincion pobre). LBO_margin_ratio = phi_pz/phi_LBO. LBO_margin_frac = 1 - phi_LBO/phi_pz.",
   "LBO_margin_frac": 0.49961960203778755,
@@ -176,6 +178,7 @@
    0.5392633410005149,
    0.4596850489981768
   ],
+  "combustor_class": "micro",
   "d_eff_mm": 0.6,
   "d_q_mm": 1.258456708844245,
   "dp_Pa": 7500.0,
@@ -228,6 +231,7 @@
    "I_band": 1.105754519692155,
    "M_design": 0.10466767283022538
   },
+  "h_L_mm": 11.762705438052707,
   "hole_rows": [
    {
     "A_row_m2": 0.0002083396030967765,
@@ -281,6 +285,8 @@
   "injector": "vaporizer",
   "injector_id": 2,
   "lbo_branch": "spray",
+  "lbo_law": "lefebvre_aref_micro",
+  "length_basis": "equivalent_diameter",
   "limitations": [
    {
     "key": "I_out_of_band",
@@ -314,6 +320,7 @@
   "n_holes_dz": 10.0,
   "n_holes_pz": 8.0,
   "phi_LBO": 0.524526954601605,
+  "phi_LBO_raw": 0.524526954601605,
   "phi_global": 0.3144769200018999,
   "phi_pz": 1.048256400006333,
   "phi_sz": 0.7487545714330951,
@@ -321,6 +328,7 @@
   "q_ref_Pa": 375.00000000000006,
   "q_wall_W_m2": 264238.62880913174,
   "rho3_kgm3": 2.0257677659833075,
+  "scale_policy_rev": null,
   "schema": "phycb-record-1",
   "seed": 71,
   "sizing_converged": true,
@@ -343,6 +351,8 @@
    "hub_over_tip": 0.0
   },
   "t_liner_mm": 0.8,
+  "tau_max_ms_applied": 10.0,
+  "tau_min_ms_applied": 4.0,
   "tau_ms": 6.049578288704031,
   "tau_pz_ms": 4.958670728445928,
   "thermal_residual_rel": 5.838837592972542e-11,

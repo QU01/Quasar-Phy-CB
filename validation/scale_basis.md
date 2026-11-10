@@ -380,3 +380,201 @@ La fila de 25 se congeló con `archive-uat14` (sólo lectura) desde
 `14-campana-real.json` + `status.json` + el contrato histórico, que
 reproduce su SHA publicado. Las tres filas se verifican sin QSTUDIO con
 `scale_l0.py check-inlets` y `pytest validation/test_scale_l0.py -k inlet`.
+
+## Base de escala D-388 (Tarea 3) · `engineering_gate: PASS` vetable
+
+D-388 (fundador, 2026-11-10) acepta como base de la clase de escala una
+**transferencia desde correlaciones publicadas** con procedencia, incertidumbre
+explícita y el ancla KJ66 intacta, sin calibrar para que pase la búsqueda.
+Esta sección es esa base. **Es vetable** hasta disponer de las fuentes
+primarias cotejadas (los cocientes de Lefebvre siguen `[L-verificar]` en
+`zone_lengths.csv`) o de un ensayo de extinción pobre (protocolo al final).
+Revisión de la política en el código: `SCALE_POLICY_REV = "phycb-scale/1
+(17.1-01, D-388)"`.
+
+### 1. Qué cambia y qué no
+
+| Elemento | Clase micro (sin cambios) | Clase de escala | Tipo |
+|---|---|---|---|
+| Selección (D-373) | resto de casos, incluido `can` a cualquier caudal | ṁ_aire ∈ [5, 25] kg/s, extremos incluidos, y `annular`/`reverse_annular` | política |
+| Escala transversal D_T de los cocientes de zona | D_L = √(4A_L/π) (desviación declarada en `_sizing`) | **h_L**, la altura de la corona que construye `geometry_generator._annulus_geometry` | [TRANSFERENCIA] |
+| Longitudes L_PZ, L_SZ, L_DZ y volúmenes | cociente·D_L | cociente·h_L (mismos cocientes θ y tabla) | consecuencia |
+| L_DZ/D en el factor de patrón | L_DZ/D_L | L_DZ/h_L (el PF sigue siendo f(θ₁₃)) | consecuencia |
+| Prefilmer del airblast | 0,25·D_L | 0,25·h_L (copa por sector) | [TRANSFERENCIA] |
+| Térmico 1D (D^n de la convección interna y longitud de haz) | D_L | h_L | [TRANSFERENCIA] |
+| Penetración Y/D_L (restricción `mixing`) | D_L | **D_L** (sin cambio, ver §4) | decisión |
+| Banda de τ (`tau_min`, `tau_max`) | 4–10 ms | **5–10 ms** | [CITADO-TABLA] |
+| Ley de LBO | C_LBO·(A_ref/V_PZ)·… (extensiva) | **C_int·(f_PZ/V_PZ)·…** (intensiva) | [TRANSFERENCIA] |
+| Nº de copas en el contrato | `N_INJ_ANNULAR_DEFAULT` = 8 o `n_tubes` del vaporizador | max(8, round(2π·r_m/(1,0·h_L))) salvo vaporizador | [TRANSFERENCIA] |
+
+El orden, el número y el signo de las 12 g físicas no cambian. Los IDs de
+arquitectura tampoco. El record y el contrato añaden `combustor_class`,
+`length_basis`, `D_T_mm`, `h_L_mm`, `tau_min_ms_applied`,
+`tau_max_ms_applied`, `scale_policy_rev`, `phi_LBO_raw`, `lbo_law` y
+`LBO_load_intensive` (D-373: la corrida registra la clase y el límite de τ).
+
+### 2. Dimensionado anular de escala y cota de residencia
+
+**Fuente y convención.** En el método de dimensionado de Lefebvre & Ballal
+(*Gas Turbine Combustion*, 3.ª ed., caps. 4–5), la «D_L» de los cocientes de
+zona de una cámara anular es la **altura del liner**, no un diámetro
+equivalente. `zone_lengths.csv` procede de esa fuente (vía
+`Quasar_PhyCB_Science.md` §2.5) y sigue marcada `[L-verificar]`: en esta
+ejecución no hubo acceso al libro para re-cotejarlo, así que la convención es
+una **transferencia citada, no verificada**. La clase micro conserva el
+diámetro equivalente porque el único punto de la carta η_c(θ) no declara
+arquitectura (desviación ya declarada en `_sizing`) y porque el ancla KJ66 se
+validó así.
+
+**Por qué es un problema de escala.** [CÁLCULO] Con la rama aero y θ fijo,
+τ ∝ ṁ^½·T₃^−¼·P₃^−½ en las dos convenciones (homotecia a HTR fijo; prueba
+`test_residence_scaling_exponent_with_mdot`). Con D_L, el mínimo de la caja
+supera 10 ms en las tres descargas (pared de 18 ms a 8 kg/s de la ola 1). El
+cociente D_L/h_L es constante a θ fijo (5,47 en el θ diagnóstico), así que la
+convención multiplica τ por ese factor.
+
+**Cota.** τ = V_c·ρ₃/ṁ₃ (proxy frío, la misma definición en ambas clases).
+Banda de la clase de escala [5, 10] ms, tomada de `class_table.csv`: el
+máximo de 10 ms es común a las tres clases tabuladas y el mínimo de 5 ms es
+el de las clases 1–2, las dos más grandes. No hay datos tabulados por encima
+de 1,5 kg/s, así que la banda es una **extrapolación de práctica**. La cota
+inferior física la da la evaporación D² del techo micro (50 µm):
+τ_evap = 3,1 ms < 5 ms.
+
+**Coherencia geométrica.** `h_L` se calcula con la misma corona que construye
+el generador (r_lo = 0,92·r_carcasa, r_li = √(r_lo² − A_L/π) y el mismo
+suelo). `test_sizing_liner_height_is_the_built_corona` lo comprueba estación
+a estación en las dos anulares y en las tres descargas.
+
+[CÁLCULO] Tabla con el θ del diagnóstico de 8 kg/s, trasladado a la
+P03/T03/ṁ de cada fila (`task3_basis.py`, SHA256 `23637c8b…cea4ac75`,
+salida `a5ca0da8…6fcb85231f`, en el directorio de trabajo de QSTUDIO
+ignorado por Git). L0 da lo mismo en `annular` y `reverse_annular` porque la
+física no distingue las dos (sólo el generador).
+
+| Caso | h_L [mm] | D_L [mm] | Ø carcasa [mm] | L_tot [mm] | τ [ms] | τ_PZ [ms] | ∫ρdV/ṁ [ms] | caja τ min–max [ms] | con D_L: τ [ms] |
+|---|---|---|---|---|---|---|---|---|---|
+| 5 kg/s | 45,2 | 247,3 | 416,8 | 102,8 | 2,89 | 2,39 | 1,34 | 2,54–13,11 | 15,82 |
+| 8 kg/s | 57,9 | 316,9 | 534,0 | 131,7 | 3,75 | 3,10 | 1,69 | 3,30–17,02 | 20,54 |
+| 25 kg/s | 107,2 | 586,5 | 988,4 | 243,7 | 7,05 | 5,82 | 3,09 | 6,20–31,97 | 38,56 |
+
+La caja (AL/Aref, L_PZ/D y L_DZ/D en sus extremos) cubre la banda [5, 10] ms
+en los seis casos (`test_residence_scale_band_is_attainable_in_the_box`).
+
+**Sensibilidad a la convención (vetable).** Si la «D_L» de una corona fuese el
+diámetro hidráulico D_h = 2h (`SCALE_LENGTH_FACTOR = 2`), longitudes y τ se
+duplican a θ fijo (`test_residence_length_factor_sensitivity`). La caja
+pasaría a 5,09–26,2 ms (5 kg/s), 6,60–34,1 ms (8 kg/s) y **12,4–63,9 ms
+(25 kg/s)**. Es decir, con 2h la banda sigue alcanzable a 5 y 8 kg/s pero
+**no a 25 kg/s**. Es el riesgo principal de esta base: la factibilidad a
+25 kg/s depende de la convención h y no de 2h. A favor de h está que es la
+dimensión que Lefebvre llama «D_L» para anulares según la tabla de la casa.
+En contra, que no se ha re-cotejado con el libro.
+
+**Criterio químico.** [CÁLCULO] Si el θ de Lefebvre usara también la altura
+de la corona de la carcasa como D_ref, A_chem/A_aero pasaría de 0,30/0,28/0,22
+a 0,64/0,60/0,47 (5/8/25 kg/s). Manda la rama aero en todos los casos, así
+que el dimensionado no cambia. Se conserva el diámetro equivalente (desviación
+declarada) y queda anotado como sensibilidad.
+
+### 3. Ley de LBO intensiva
+
+**Forma.** NASA CR-174738, pp. 103–105 (Lefebvre), transcrita en
+17.1-RESEARCH.md §3:
+
+    φ_LBO = C_int · (f_PZ·ṁ_A / V_PZ) · P₃^−1,3 · e^(−T₃/300) · (D₃₂²/λ_eff) / LHV
+
+Es intensiva: al replicar N sectores idénticos, ṁ_A y V_PZ se multiplican por
+N y f_PZ no cambia (`test_lbo_intensive_invariant_to_sector_replication`). La
+ley micro sustituye f_PZ por A_ref y escala ×N (`test_lbo_micro_law_is_
+extensive_and_untouched`). Por eso no se puede transferir tal cual.
+
+**Constante.** No hay un segundo dato de extinción comparable para calibrar.
+C_int se **transfiere** del único punto de calibración existente, REF_CB10
+(C_LBO_SI = 6,95e16, ±45 %, `lbo_constant.csv`), imponiendo que las dos leyes
+den la misma φ_LBO en el ancla: C_int = C_LBO·A_ref/f_PZ = 6,95e16 ×
+3,33517e-3 m² / 0,30 = **7,726476e14** (`LBO_C_INT_SI`;
+`test_lbo_c_int_transfer_reproduces_the_anchor` lo recalcula). No interviene
+ningún resultado de la búsqueda de escala.
+
+**Banda declarada.** `LBO_INT_BAND` = ×[1/1,45; 1,45·4²]. El extremo bajo es
+el ±45 % de la calibración. El alto la compone con el factor 3–4 de
+infra-predicción del SMD airblast (docs/VALIDATION.md, G8), que entra al
+cuadrado porque φ ∝ D₃₂². [CÁLCULO] Con el θ diagnóstico, φ_LBO nominal vale
+0,025/0,027/0,030 (5/8/25 kg/s) frente a φ_PZ ≈ 0,86–0,88. En el extremo
+alto de la banda (0,58/0,62/0,69) el margen sigue siendo 0,47/0,40/0,27,
+por encima del mínimo de 0,20 (`test_lbo_scale_margin_robust_across_
+transfer_band`). Conclusión robusta dentro de la banda: el LBO no limita la
+clase de escala en L0. La restricción usa el valor nominal. `phi_LBO_raw`
+deja visible el valor antes de saturar.
+
+**Dominio.** La forma de Lefebvre se derivó para cámaras convencionales de
+espray a presión moderada. La constante viene de una micro con vaporizador
+(SMD fijo de 50 µm), así que la transferencia a airblast a 5–25 kg/s cambia
+de régimen de atomización. Por eso la banda alta es tan ancha. Ningún factor
+de mezcla o recirculación se modela aparte: lo absorbe C_int.
+
+### 4. Penetración y conteos: lo que se queda con la convención del ancla
+
+[CÁLCULO] Medida contra la altura de la corona, la penetración de dilución del
+θ diagnóstico es Y/h ≈ 2,7 **en las tres descargas** y también en el ancla,
+porque el área de orificios por fila respecto de A_L no depende del tamaño. Es
+un desajuste invariante con la escala (`test_sizing_dimensionless_ratios_are_
+scale_invariant`), no un efecto de escala. Por eso la clase de escala conserva
+el criterio micro (Y/D_L ≈ 0,5, Lefebvre & Norster), que es el aceptado en
+el ancla anular KJ66. El criterio publicado para chorros en una corona es el de
+Holdeman (NASA TM-104412), C = (S/H)·√J ≈ 2,5 con inyección por una cara. Exige
+conteos por sector que la parametrización L0 no tiene (θ₇ ∈ [6, 18] orificios
+en toda la corona). [CÁLCULO] Con un orificio por sector de paso h (24 por
+fila a 8 kg/s), C ≈ 2,4 y S/d ≈ 1,7. Es una dirección viable para L1.5 o
+17.1-03, no un cierre. **Limitación vetable**: la restricción `mixing` de la
+clase de escala sigue la convención micro.
+
+**Copas (capa 5c de 17.1-03, D-386).** El generador pone en la clase de escala
+una copa por sector de paso 1,0·h_L sobre el radio medio
+(`CUP_PITCH_OVER_H`, banda 0,8–1,5, vetable): 24 copas a 8 kg/s con el θ
+diagnóstico. Con las 8 por defecto, el cuerpo del swirler (69,6 mm) no cabía
+en la corona de 57,9 mm. Con 24 mide 40,2 mm y el paso cumple 1,25·Ø
+(`test_sizing_cup_pitch_and_seats_fit_the_corona`). Los diseños de
+**vaporizador** conservan el `n_tubes` de la física (6–12), así que su copa
+puede no caber en la corona. Queda para la capa 5c de 17.1-03.
+
+### 5. Comprobación de que la base no está calibrada para pasar
+
+- Ninguna constante sale de la búsqueda de escala. h_L sale de la geometría
+  existente, la banda de τ de `class_table.csv` y C_int del ancla micro.
+- [MEDIDO-SW, diagnóstico; no es la matriz de aceptación, que es la de
+  17.1-02] Búsquedas cortas L0 con DfAM, T04 1200 K, Jet-A, Inconel-625/718,
+  dp_max 0,04, PF 0,40 y semilla 71, en `QSTUDIO/backend/app/workspace/
+  _tmp/phase-17.1/t3search/`:
+
+| Caso | Presupuesto | Resultado del recomendado |
+|---|---|---|
+| 5 kg/s, ambas anulares | 120/2/12 | factible, DfAM imprimible; τ 5,41 ms; envolvente Ø416,8 × 169,2 mm |
+| 8 kg/s, ambas anulares | 120/2/12 | factible, DfAM imprimible; τ 7,02 ms, PF 0,280; Ø534,0 × 216,8 mm |
+| 25 kg/s, `annular` | 120/2/12 | infactible: `tau_max` +0,11 y `eta_comb` +0,027 (presupuesto) |
+| 25 kg/s, `annular` | 320/4/14 | factible, DfAM imprimible; τ 8,39 ms, PF 0,383; Ø988,4 × 288,4 mm |
+
+- KJ66 intacto: `test_phycb.py --only T1,T3,T13,T16,T25,T26,T28,T30,T31,T49`
+  da 111/111. `validate.py --strict --no-write` repite el marcador confirmado
+  (PASS 107, FAIL 48, todos huecos conocidos, N/E 1, obsoletos 0). τ del ancla
+  6,0496 ms con límite 10 ms y ley micro.
+- `anchors/REF_CB10.json`: sólo se añadieron las 10 claves nuevas del record
+  (valores del ancla `micro`, `equivalent_diameter`, τ 4–10 ms, ley micro). Un
+  script comprueba que todos los valores existentes son idénticos antes de
+  escribir. No se re-congeló el ancla entera: `limitations` depende del
+  historial del proceso y T16 la excluye. El repositorio no tiene
+  `docs/PENDIENTES_Lverificar.md`, así que el movimiento se cita aquí.
+
+### 6. Qué levantaría el veto (protocolo de adquisición)
+
+1. Cotejar en Lefebvre & Ballal (3.ª ed., caps. 4–5) la convención de «D_L»
+   para anulares (altura frente a diámetro hidráulico) y los cocientes de
+   `zone_lengths.csv`. Decide la sensibilidad h/2h de §2, que es lo que hace
+   alcanzable o no la banda a 25 kg/s.
+2. Barrido de extinción pobre en un sector de copa a P/T/ṁ fijos con caudal de
+   combustible decreciente: medir V_PZ, el reparto, el SMD del airblast por
+   copa y la repetibilidad (tres pasadas). Permite calibrar C_int con un dato
+   independiente del ancla micro.
+3. Criterio de mezcla de corona (Holdeman) con conteos por sector en L1.5 o
+   17.1-03.

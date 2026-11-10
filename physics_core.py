@@ -825,7 +825,72 @@ BLEED_FRAC_PER_K = 2.5e-4  # sangrado extra por K sobre el umbral. ⚠️
 # --- Límites de las restricciones g (contrato §5.1) ----------------------
 TAU_MIN_MS = 4.0           # τ mínimo ✅ (class_table `tau_ms`, clase micro)
 TAU_MAX_MS = 10.0          # τ máximo ✅ (class_table `tau_ms`, clases 0–2)
-M_EXIT_MAX = 0.30          # Mach de salida amigable a la turbina radial
+
+# --- Clase de escala 5–25 kg/s (fase 17.1 de QSTUDIO, D-373 y D-388) -----
+#
+#  Base técnica, procedencia, bandas y sensibilidad en
+#  `validation/scale_basis.md` (§ «Base de escala D-388»). Resumen:
+#
+#  * Selección (D-373): ṁ_aire ∈ [5, 25] kg/s, extremos incluidos, y
+#    arquitectura anular (`annular` o `reverse_annular`). Fuera de eso,
+#    incluido `can` a cualquier caudal, rige el modelo micro SIN cambios
+#    (ancla KJ66 intacta: τ ≤ 10 ms, ley de LBO y longitudes por D_L).
+#  * Dimensionado anular de escala [TRANSFERENCIA, vetable]: en una corona,
+#    la «D_L» de los cocientes de Lefebvre & Ballal (longitudes de zona,
+#    L_DZ/D_L del factor de patrón, penetración Y/D_L) es la ALTURA del
+#    liner, no el diámetro equivalente √(4A_L/π) que usa la clase micro
+#    (desviación declarada en `_sizing`). La clase de escala usa
+#    D_T = SCALE_LENGTH_FACTOR·h_L, con h_L = r_lo − r_li de la MISMA
+#    corona que construye `geometry_generator._annulus_geometry`. D_T se
+#    usa también para el prefilmer del airblast (copa por sector) y para
+#    el diámetro y la longitud de haz del térmico 1D.
+#  * Cota de residencia: banda τ ∈ [5, 10] ms de `class_table.csv` para las
+#    clases 1–2 (las dos más grandes tabuladas; el máximo de 10 ms es común
+#    a las tres clases). Misma definición de τ (proxy frío V_c·ρ₃/ṁ₃).
+#  * LBO intensiva: forma publicada de Lefebvre (NASA CR-174738),
+#    φ_LBO = C_int·(f_PZ·ṁ_A/V_PZ)·P₃^−1.3·e^{−T₃/300}·(D₃₂²/λ)/LHV, que
+#    no cambia al replicar N sectores idénticos. C_int se TRANSFIERE del
+#    único punto de calibración existente (REF_CB10, ±45 %) imponiendo la
+#    misma φ_LBO que la ley micro en el ancla; no se ajusta a la búsqueda.
+SCALE_MDOT_MIN_KGS = 5.0
+SCALE_MDOT_MAX_KGS = 25.0
+SCALE_ARCHS = ("annular", "reverse_annular")
+SCALE_POLICY_REV = "phycb-scale/1 (17.1-01, D-388)"
+SCALE_TAU_MIN_MS = 5.0     # class_table `tau_ms` clases 1–2 (5–10 ms)
+SCALE_TAU_MAX_MS = 10.0    # class_table `tau_ms` clases 0–2 (máx. 10 ms)
+SCALE_LENGTH_FACTOR = 1.0  # D_T / h_L. 1 = altura de la corona (Lefebvre);
+#                            2 = diámetro hidráulico de la corona (D_h = 2h),
+#                            sólo para el análisis de sensibilidad.
+#: C_int de la ley intensiva [SI]. = C_LBO_SI·A_ref/f_PZ evaluado en el ancla
+#: REF_CB10 (validation/anchors.json), de modo que ambas leyes dan la misma
+#: φ_LBO en el ancla. Congelado; `validation/test_scale_l0.py` lo recalcula.
+LBO_C_INT_SI = 772647568635609.2   # = 6.95e16·A_ref/f_PZ de REF_CB10 [SI·m²]
+#: Banda de transferencia declarada sobre C_int (vetable): ±45 % de la
+#: calibración REF_CB10 compuesta con el factor 3–4 de SMD airblast de
+#: docs/VALIDATION.md G8 (φ ∝ D₃₂²). Sólo informativa: g usa el nominal.
+LBO_INT_BAND = (1.0 / 1.45, 1.45 * 4.0 ** 2)
+
+
+def combustor_class(mdot_air_kgs: float, arch: str) -> str:
+    """`"scale"` en [5, 25] kg/s con arquitectura anular; si no, `"micro"`."""
+    try:
+        m = float(mdot_air_kgs)
+    except (TypeError, ValueError):
+        return "micro"
+    if (arch in SCALE_ARCHS and math.isfinite(m)
+            and SCALE_MDOT_MIN_KGS <= m <= SCALE_MDOT_MAX_KGS):
+        return "scale"
+    return "micro"
+
+
+def tau_limits_ms(cls: str) -> tuple[float, float]:
+    """Banda (τ_min, τ_max) [ms] aplicada a la clase."""
+    if cls == "scale":
+        return SCALE_TAU_MIN_MS, SCALE_TAU_MAX_MS
+    return TAU_MIN_MS, TAU_MAX_MS
+
+
+M_EXIT_MAX = 0.30         # Mach de salida amigable a la turbina radial
 DP_MAX_DEFAULT = 0.040     # Δp/p máximo ✅ (banda micro 2–4 %)
 D_EFF_MIN_MM = 0.50        # Ø mínimo de efusión imprimible en LPBF ✅
 PHI_PZ_MAX = 1.40          # φ_PZ máximo antes de zona rica tipo RQL
@@ -1588,10 +1653,38 @@ def _sizing(theta: np.ndarray, gates: dict, mdot_air: float,
     U_ref = mdot3 / max(rho3 * A_ref, 1e-9)
     q_ref = 0.5 * rho3 * U_ref ** 2
 
+    # --- escala transversal de los cocientes de Lefebvre [§2.5] ----------
+    #  Clase micro: D_T = D_L (diámetro equivalente, desviación declarada en
+    #  el docstring; ancla KJ66 intacta). Clase de escala (D-388): D_T =
+    #  SCALE_LENGTH_FACTOR·h_L con h_L la altura de la corona que construye
+    #  `geometry_generator._annulus_geometry` (r_lo = LINER_R_OVER_RCAS·r_cas,
+    #  r_li = √(r_lo² − A_L/π) con suelo ANNULUS_R_MIN_FRAC·r_cas conservando
+    #  el área).
+    cls = combustor_class(mdot3, arch)
+    h_L = None
+    if arch != "can":
+        r_lo_h = LINER_R_OVER_RCAS * r_cas_m
+        r_min_h = ANNULUS_R_MIN_FRAC * r_cas_m
+        x_h = r_lo_h * r_lo_h - A_L / math.pi
+        if x_h <= r_min_h * r_min_h:
+            r_li_h = r_min_h
+            r_lo_h = math.sqrt(r_min_h * r_min_h + A_L / math.pi)
+        else:
+            r_li_h = math.sqrt(x_h)
+        h_L = r_lo_h - r_li_h
+    if cls == "scale" and h_L is not None:
+        D_T = SCALE_LENGTH_FACTOR * h_L
+        length_basis = ("liner_height" if SCALE_LENGTH_FACTOR == 1.0
+                        else f"liner_height_x{SCALE_LENGTH_FACTOR:g}")
+    else:
+        D_T = D_L
+        length_basis = "equivalent_diameter"
+    tau_lo, tau_hi = tau_limits_ms(cls)
+
     # --- longitudes de zona [§2.5] ---------------------------------------
-    L_pz = float(min(max(theta[12], 0.20), 2.0)) * D_L
-    L_sz = c["L_sz_over_DL"].get(arch, 0.50) * D_L
-    L_dz = float(min(max(theta[13], 0.20), 5.0)) * D_L
+    L_pz = float(min(max(theta[12], 0.20), 2.0)) * D_T
+    L_sz = c["L_sz_over_DL"].get(arch, 0.50) * D_T
+    L_dz = float(min(max(theta[13], 0.20), 5.0)) * D_T
     L_tot = L_pz + L_sz + L_dz
 
     V_pz, V_sz, V_dz = A_L * L_pz, A_L * L_sz, A_L * L_dz
@@ -1631,7 +1724,11 @@ def _sizing(theta: np.ndarray, gates: dict, mdot_air: float,
         V_c_m3=V_c, V_pz_m3=V_pz, V_sz_m3=V_sz, V_dz_m3=V_dz,
         tau_ms=1e3 * tau, I_MW_m3_atm=I_MW,
         theta_lefebvre=theta_lefebvre, Omega_load=Omega,
-        _D_L=D_L, _L_tot=L_tot, _A_L=A_L, _A_ref=A_ref)
+        combustor_class=cls, length_basis=length_basis,
+        D_T_mm=1e3 * D_T, h_L_mm=(None if h_L is None else 1e3 * h_L),
+        tau_min_ms_applied=tau_lo, tau_max_ms_applied=tau_hi,
+        scale_policy_rev=(SCALE_POLICY_REV if cls == "scale" else None),
+        _D_L=D_L, _D_T=D_T, _L_tot=L_tot, _A_L=A_L, _A_ref=A_ref)
 
 
 # ==========================================================================
@@ -1795,6 +1892,11 @@ def _holes(theta: np.ndarray, gates: dict, sz: dict, part: dict,
     U_j = math.sqrt(max(2.0 * dp_liner_Pa / max(rho3, 1e-6), 1e-9))
     Cd = c["Cd_hole"]
     splits = part["splits"]
+    # Penetración: Y/D_L con el diámetro equivalente en TODAS las clases.
+    # Es un cociente invariante con la escala (mismo θ ⇒ mismo Y/D_L a 5, 8
+    # y 25 kg/s) y conserva la convención aceptada en el ancla anular KJ66;
+    # medido contra la altura de la corona saldría Y/h ≈ 2,7 también en el
+    # ancla. Ver scale_basis.md, «Base de escala D-388» (limitación vetable).
     D_L = sz["_D_L"]
     A_L = sz["_A_L"]
     R_hot = _r_gas(mw_hot)
@@ -1893,7 +1995,7 @@ def _atomization(theta: np.ndarray, gates: dict, sz: dict, rho3: float,
     mdot_f = max(float(mdot_fuel), 1e-9)
     U_g = max(math.sqrt(max(2.0 * dp_liner_Pa / max(rho3, 1e-6), 1e-9)),
               U_ATOMIZING_MIN_MS)
-    D_p = max(D_PREFILMER_OVER_DL * sz["_D_L"], 1e-4)     # Ø prefilmer [m]
+    D_p = max(D_PREFILMER_OVER_DL * sz.get("_D_T", sz["_D_L"]), 1e-4)  # Ø prefilmer [m]
     ALR = float(min(max(theta[11], 0.10), 50.0)) \
         if np.isfinite(theta[11]) else 4.0
     mr = 1.0 / ALR                                        # ṁ_l/ṁ_g
@@ -2095,8 +2197,19 @@ def _stability(theta: np.ndarray, gates: dict, sz: dict, part: dict,
         smd_m = float(smd) * 1e-6
         evap_term = smd_m ** c["lbo_exp_SMD"] \
             / max(float(fp["lambda_evap"]), 1e-12)
-    phi_lbo = c["C_LBO"] * A_over_V * press_term * evap_term / LHV
-    phi_lbo = float(min(max(phi_lbo, 1e-4), 10.0))
+    f_pz = float(part.get("splits", {}).get("pz", 0.0))
+    load_int = f_pz * max(mdot_air, 1e-9) / max(sz["V_pz_m3"], 1e-12)
+    if sz.get("combustor_class") == "scale":
+        #  Ley INTENSIVA de Lefebvre (NASA CR-174738): f_PZ·ṁ_A/V_PZ.
+        #  `press_term` ya lleva ṁ_A; A_ref/V_PZ se sustituye por f_PZ/V_PZ.
+        lbo_law = "lefebvre_intensive_fpz"
+        phi_raw = (LBO_C_INT_SI * (f_pz / max(sz["V_pz_m3"], 1e-12))
+                   * press_term * evap_term / LHV)
+    else:
+        lbo_law = "lefebvre_aref_micro"
+        phi_raw = c["C_LBO"] * A_over_V * press_term * evap_term / LHV
+    phi_raw = float(phi_raw)
+    phi_lbo = float(min(max(phi_raw, 1e-4), 10.0))
     phi_pz = max(part["phi_pz"], 1e-6)
     #  TRES formas del margen — ver `LBO_MARGIN_DEF`. `LBO_margin` conserva
     #  su definición original (exceso relativo) porque es ABI: la consume
@@ -2123,7 +2236,9 @@ def _stability(theta: np.ndarray, gates: dict, sz: dict, part: dict,
                 LBO_margin_def=LBO_MARGIN_DEF,
                 E_min_J=float(E_min), d_q_mm=1e3 * d_q,
                 S_L_ms=float(S_L), mu3_Pas=mu3,
-                lbo_branch="gas" if gas_branch else "spray")
+                lbo_branch="gas" if gas_branch else "spray",
+                phi_LBO_raw=phi_raw, lbo_law=lbo_law,
+                LBO_load_intensive=float(load_int))
 
 
 # ==========================================================================
@@ -2509,7 +2624,8 @@ def _liner_thermal_1d(theta: np.ndarray, gates: dict, sz: dict, part: dict,
     eps_w = lim["emissivity_wall"]
     t_w = max(float(theta[14]) if np.isfinite(theta[14]) else 0.8, 0.05) * 1e-3
     A_L, A_an = sz["_A_L"], sz["A_an_m2"]
-    D_L, D_an = sz["_D_L"], max(sz["D_an_m"], 1e-3)
+    # D_T: D_L en micro; altura de la corona en la clase de escala (D-388)
+    D_L, D_an = sz.get("_D_T", sz["_D_L"]), max(sz["D_an_m"], 1e-3)
     L_tot = sz["_L_tot"]
 
     # --- geometría de la efusión (ANTES que M: M depende de A_efusión) ----
@@ -2710,7 +2826,7 @@ def _pattern_factor(sz: dict, holes: dict, theta: np.ndarray) -> dict:
     c = coeffs()
     T3 = float(theta[IDX_T3_K])
     T4 = float(theta[IDX_T4_K])
-    ratio = sz["L_dz_mm"] / max(sz["D_L_mm"], 1e-9)
+    ratio = sz["L_dz_mm"] / max(sz.get("D_T_mm", sz["D_L_mm"]), 1e-9)
     PF = math.exp(-max(c["pf_k"], 0.0) * ratio
                   * max(holes["dp_liner_over_qref"], 0.0))
     PF = float(min(max(PF, 0.0), 5.0))
@@ -3083,8 +3199,10 @@ def _constraints(record: dict, theta: np.ndarray) -> list[float]:
             float(record["T_w1_K"]) / T_lim - 1.0,
             (float(record["phi_LBO"]) * (1.0 + c["lbo_margin_min"])
              / max(float(record["phi_pz"]), 1e-9) - 1.0),
-            TAU_MIN_MS / max(float(record["tau_ms"]), 1e-9) - 1.0,
-            float(record["tau_ms"]) / TAU_MAX_MS - 1.0,
+            (float(record.get("tau_min_ms_applied") or TAU_MIN_MS)
+             / max(float(record["tau_ms"]), 1e-9) - 1.0),
+            (float(record["tau_ms"])
+             / float(record.get("tau_max_ms_applied") or TAU_MAX_MS) - 1.0),
             float(record["M_exit"]) / M_EXIT_MAX - 1.0,
             float(record["dp_over_p"]) / DP_MAX_DEFAULT - 1.0,
             float(record["lpbf_t_min_mm"]) / max(t_liner, 1e-9) - 1.0,
@@ -3388,6 +3506,14 @@ def _record_from_chain(theta: np.ndarray, gates: dict, ch: dict,
         "sizing_converged": bool(sz["sizing_converged"]),
         "D_ref_mm": _safe(sz["D_ref_mm"]),
         "D_L_mm": _safe(sz["D_L_mm"]),
+        # --- clase de escala (fase 17.1, D-373/D-388) ---------------------
+        "combustor_class": sz["combustor_class"],
+        "length_basis": sz["length_basis"],
+        "D_T_mm": _safe(sz["D_T_mm"]),
+        "h_L_mm": (None if sz["h_L_mm"] is None else _safe(sz["h_L_mm"])),
+        "tau_min_ms_applied": _safe(sz["tau_min_ms_applied"]),
+        "tau_max_ms_applied": _safe(sz["tau_max_ms_applied"]),
+        "scale_policy_rev": sz["scale_policy_rev"],
         "D_casing_mm": _safe(sz["D_casing_mm"]),
         "A_L_m2": _safe(sz["A_L_m2"]),
         "A_an_m2": _safe(sz["A_an_m2"]),
@@ -3442,6 +3568,9 @@ def _record_from_chain(theta: np.ndarray, gates: dict, ch: dict,
         "E_min_J": _safe(stab["E_min_J"]),
         "d_q_mm": _safe(stab["d_q_mm"]),
         "lbo_branch": stab["lbo_branch"],
+        "phi_LBO_raw": _safe(stab["phi_LBO_raw"]),
+        "lbo_law": stab["lbo_law"],
+        "LBO_load_intensive": _safe(stab["LBO_load_intensive"]),
         # --- térmico 1D [Ciencia §5] ---------------------------------------
         "T_w1_K": _safe(therm["T_w1_K"]),
         "T_w2_K": _safe(therm["T_w2_K"]),
@@ -3560,6 +3689,9 @@ def _degenerate_record(theta, source: str, reason: str,
         "A_ref_chem_m2": 0.0, "sizing_driver": "none",
         "sizing_converged": False, "D_ref_mm": 0.0,
         "D_L_mm": 0.0, "D_casing_mm": 0.0, "A_L_m2": 0.0, "A_an_m2": 0.0,
+        "combustor_class": "none", "length_basis": "none", "D_T_mm": 0.0,
+        "h_L_mm": None, "tau_min_ms_applied": TAU_MIN_MS,
+        "tau_max_ms_applied": TAU_MAX_MS, "scale_policy_rev": None,
         "U_ref_ms": 0.0, "q_ref_Pa": 0.0, "L_pz_mm": 0.0, "L_sz_mm": 0.0,
         "L_dz_mm": 0.0, "L_tot_mm": 0.0, "V_c_m3": 0.0, "V_pz_m3": 0.0,
         "V_sz_m3": 0.0, "V_dz_m3": 0.0, "tau_pz_ms": 0.0,
@@ -3573,6 +3705,7 @@ def _degenerate_record(theta, source: str, reason: str,
         "atomizer": {}, "eta_theta": 0.0, "eta_evap": 0.0, "eta_mix": 0.0,
         "eta_driver": "none", "phi_LBO": 10.0, "LBO_margin": -1.0,
         "E_min_J": 0.0, "d_q_mm": 0.0, "lbo_branch": "none",
+        "phi_LBO_raw": 10.0, "lbo_law": "none", "LBO_load_intensive": 0.0,
         "T_w1_K": 0.0, "T_w2_K": 0.0, "eta_film": 0.0,
         "blowing_ratio_M": 0.0, "T_wall_profile": [], "q_wall_W_m2": 0.0,
         "thermal_residual_rel": 0.0, "eps_gas": 0.0, "n_eff_holes": 0,
