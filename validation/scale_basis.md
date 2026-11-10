@@ -322,3 +322,61 @@ limpio antes y después; intérprete de Phy-AC el del venv
 - Opciones que quedan para el fundador (todas cambian la receta común del
   plan): bajar `sm_flow_min` a 5 kg/s, subir `rpm_max` a 5 kg/s o aceptar un
   punto del frente. Cambiar otra vez el objetivo de PR no sirve.
+
+### Descarga a 5 kg/s con `sm_flow_min` 0,12 (Tarea 2, D-390) · compuerta superada
+
+[MEDIDO-SW] D-390 (fundador, 2026-11-10): **sólo a 5 kg/s** `--sm-flow-min`
+pasa de 0,15 a 0,12. El resto de la receta D-389 no cambia (objetivo 3,5,
+semilla 71, 320/5/14, 150 s; intento 2 sólo si el 1 fallaba). 8 y 25 kg/s
+conservan 0,15 (la receta de 8 no se relanzó y la de 25 es la de UAT 14).
+Corrida de adquisición nueva por el arnés, no el sondeo:
+
+| Intento | Receta | Tope | Resultado | SHA256 contrato · checkpoint · log |
+|---|---|---|---|---|
+| 1 (`ac-5-a1-e6686e121c7b`, 2026-11-10T22:35:40Z) | semilla 71, 320/5/14, `--sm-flow-min 0.12` | 150 s | rc 0 en 119,3 s, 390 evaluaciones; recomendado factible con **todas** las g del spec efectivo, PR 3.682040615872552 | `c8799242…99821cde1` · `c3e2d1f0…a7463988be7` · `e0410175…6ce6103cff70` |
+
+Fila congelada: PR 3.682040615872552, P03 = 373082.7654032863 Pa (total,
+= 101325·PR), T03 = 443.96438386510135 K, 8 etapas, η_pol 0,8547,
+20 025 rpm, U_tip 282,9 m/s, margen de bombeo en gasto `sm_flow` =
+0,122569 (reevaluado igual). Phy-AC `081b6d0`, limpio antes y después;
+intérprete de Phy-AC el del venv (`PHYCB_SCALE_AC_PYTHON`).
+
+**Regla de factibilidad.** La compuerta reevalúa θ dentro del checkout de
+Phy-AC con `DesignSpec(**spec_efectivo).constraints` (19 g: las 9
+aerodinámicas que guarda el dataset más topes, bombeo y estructura) y el
+`sm_flow_min` del spec efectivo (0,12). No usa la constante fija
+`SM_FLOW_MIN` de la CLI de Phy-AC, cuya etiqueta «Surge margin … (min 15%)»
+es cosmética y no se corrige en esta fase. `check_row` exige además que el
+spec efectivo lleve el umbral de la política del caudal (0,12 a 5, 0,15 a 8
+y 25), que la fila, la receta y la procedencia declaren `sm_flow_min: 0.12`
+y `sm_flow_policy: "D-390"`, y que el `sm_flow` reevaluado no baje de 0,12.
+La excepción no se puede aplicar a otro caudal sin cambiar el arnés.
+
+**Excepción vetable y riesgo (D-390).** El margen de bombeo queda en
+12,26 %, 0,26 puntos sobre el umbral 0,12 y por debajo de la práctica del
+15–25 % que cita Phy-AC. El diseño usa las 8 etapas del tope y es el único
+factible en banda del conjunto evaluado. Se acepta porque Phy-CB necesita
+P03/T03 realistas y el compresor no es el objeto de la fase. El informe de
+entrega a la fase 18 lo hereda.
+
+[CÁLCULO] Reproducción del sondeo de diagnóstico S2
+(`probe5/s2-sm012`, misma receta, script `analyze_probe.py` SHA256
+`b55160ee…a7584f6`): θ idéntica y PR, P03, T03, η, rpm y `sm_flow`
+idénticos bit a bit. El SHA del contrato difiere (`8e640e97…` en el sondeo)
+sólo por los metadatos de la corrida (fecha y ruta). El sondeo no es
+evidencia de aceptación.
+
+### Matriz de descargas congelada (Tarea 2)
+
+| Masa | Origen | PR | P03 [Pa] | T03 [K] | sm_flow_min | SHA256 contrato |
+|---|---|---|---|---|---|---|
+| 5 | adquirida (D-389 + D-390) | 3.682040615872552 | 373082.7654032863 | 443.96438386510135 | 0,12 (excepción vetable) | `c8799242d8df…1c107d99821cde1` |
+| 8 | adquirida (plan) | 3.5426783175582197 | 358961.8805265866 | 432.4902351398321 | 0,15 | `85c016debab3…a44bb3655eab1745`[^8] |
+| 25 | UAT 14 archivada (`1f9e4fa586c2`) | 3.185506101458321 | 322771.4057302644 | 420.15317853003546 | 0,15 (defecto de Studio) | `cff8c2f09285…a4ec2ab7168526ee` |
+
+[^8]: SHA completo de 8: `85c016debab3f99c9cdc4ec1896053db63482e0cceecba27a44bb3655eab1745`.
+
+La fila de 25 se congeló con `archive-uat14` (sólo lectura) desde
+`14-campana-real.json` + `status.json` + el contrato histórico, que
+reproduce su SHA publicado. Las tres filas se verifican sin QSTUDIO con
+`scale_l0.py check-inlets` y `pytest validation/test_scale_l0.py -k inlet`.

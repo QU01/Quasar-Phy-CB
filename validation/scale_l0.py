@@ -90,6 +90,35 @@ AC_ATTEMPTS = (dict(seed=71, n_init=320, rounds=5, batch_size=14),
 AC_TIMEOUTS_S = (150.0, 210.0)
 AC_TIMEOUT_POLICY = "D-387"
 AC_TIMEOUT_S = AC_TIMEOUTS_S[0]
+#: Margen de bombeo mínimo por caudal. D-390 (fundador, 2026-11-10): SÓLO a
+#: 5 kg/s `sm_flow_min` baja de 0,15 a 0,12 tras agotar la compuerta con
+#: D-389 (0 de 51 diseños en banda factibles con todas las restricciones,
+#: siempre por el margen de bombeo). 8 y 25 kg/s conservan 0,15. La
+#: factibilidad se evalúa con TODAS las g del spec efectivo (spec.sm_flow_min),
+#: no con la constante fija SM_FLOW_MIN de la CLI de Phy-AC, cuya etiqueta
+#: «min 15%» es cosmética.
+AC_SM_FLOW_MIN = {"5": 0.12}
+AC_SM_FLOW_EXCEPTION = {"5": dict(
+    policy="D-390", sm_flow_min=0.12, baseline_sm_flow_min=0.15,
+    vetable=True,
+    risk=("excepción vetable: margen de bombeo en gasto ~12,26 % (0,26 "
+          "puntos sobre el umbral 0,12) frente a la práctica del 15-25 % que "
+          "cita Phy-AC; el diseño usa 8 de 8 etapas del tope y es el único "
+          "factible en banda PR [3,7] del sondeo de diagnóstico; se acepta "
+          "porque Phy-CB necesita P03/T03 realistas y el compresor no es el "
+          "objeto de la fase 17.1"))}
+
+
+def ac_common(key: str) -> dict:
+    """Receta común efectiva por caudal (AC_COMMON + excepción D-390)."""
+    c = dict(AC_COMMON)
+    if key in AC_SM_FLOW_MIN:
+        c["sm_flow_min"] = AC_SM_FLOW_MIN[key]
+    return c
+
+
+def expected_sm_flow_min(key: str) -> float:
+    return float(ac_common(key)["sm_flow_min"])
 
 #: Receta del diagnóstico L0 de Phy-CB (Tarea 1 de 17.1-01).
 DIAG_RECIPE = dict(arch="annular", fidelity="L0", t4=1200.0, fuel="jet_a",
@@ -254,6 +283,30 @@ def check_row(key: str, row: dict) -> dict:
         raise ScaleError(f"[{key}] la reevaluación no reproduce el PR")
     if float(cand.get("reeval_T0_out_K", float("nan"))) != float(row["T03_K"]):
         raise ScaleError(f"[{key}] la reevaluación no reproduce T03")
+    if len(cand["reeval_g"]) < len(cand["g"]):
+        raise ScaleError(f"[{key}] la reevaluación no usa todas las "
+                         "restricciones del spec")
+    spec = row.get("spec_effective") or {}
+    sm_min = expected_sm_flow_min(key)
+    if float(spec.get("sm_flow_min", float("nan"))) != sm_min:
+        raise ScaleError(f"[{key}] spec efectivo con sm_flow_min="
+                         f"{spec.get('sm_flow_min')!r}, se exige {sm_min!r}")
+    exc = AC_SM_FLOW_EXCEPTION.get(key)
+    if exc is not None:
+        if (row.get("sm_flow_min") != exc["sm_flow_min"]
+                or row.get("sm_flow_policy") != exc["policy"]
+                or (row.get("sm_flow_exception") or {}).get("vetable")
+                is not True
+                or (row.get("recipe") or {}).get("sm_flow_min")
+                != exc["sm_flow_min"]):
+            raise ScaleError(f"[{key}] falta declarar la excepción "
+                             f"{exc['policy']} de sm_flow_min")
+        sm = cand.get("reeval_sm_flow")
+        if not _finite(sm) or float(sm) < exc["sm_flow_min"]:
+            raise ScaleError(f"[{key}] margen de bombeo reevaluado {sm!r} "
+                             f"bajo el umbral {exc['sm_flow_min']}")
+    elif row.get("sm_flow_policy") is not None:
+        raise ScaleError(f"[{key}] excepción de sm_flow_min no autorizada")
     prov = row.get("provenance") or {}
     if prov.get("ac_commit") != AC_PINNED_SHA:
         raise ScaleError(f"[{key}] commit de Phy-AC no fijado")
@@ -311,6 +364,9 @@ def _ac_reeval_main(args) -> int:
                g=[float(x) for x in g],
                feasible=bool(spec.violation(g) <= 1e-9),
                PR=float(rec["PR"]), T0_out_K=float(rec["T0_out"]),
+               sm_flow=(float(rec["sm_flow"]) if _finite(rec.get("sm_flow"))
+                        else None),
+               sm_flow_min=float(spec.sm_flow_min),
                source=str(rec.get("source", "")))
     Path(args.response).write_text(json.dumps(out), encoding="utf-8")
     return 0
@@ -377,6 +433,8 @@ def _row_from_ac_run(key: str, outdir: Path, recipe: dict, prov: dict,
             source=der.get("source"),
             reeval_g=rr["g"], reeval_feasible=rr["feasible"],
             reeval_PR=rr["PR"], reeval_T0_out_K=rr["T0_out_K"],
+            reeval_sm_flow=rr.get("sm_flow"),
+            reeval_sm_flow_min=rr.get("sm_flow_min"),
             reeval_source=rr["source"]),
         spec_effective=spec,
         recipe=recipe,
@@ -389,7 +447,7 @@ def _row_from_ac_run(key: str, outdir: Path, recipe: dict, prov: dict,
 
 
 def _ac_argv(key: str, att: dict, outdir: Path) -> list[str]:
-    c = AC_COMMON
+    c = ac_common(key)
     return ["phyac_cli.py", "--fidelity", "L0", "--mdot", key,
             "--pr", repr(AC_TARGET_PR[key]), "--t0", repr(c["t0"]),
             "--p0", repr(c["p0"]), "--rpm-max", repr(c["rpm_max"]),
@@ -407,7 +465,7 @@ def _same_recipe(row: dict, key: str) -> bool:
     return (row.get("provenance", {}).get("ac_commit") == AC_PINNED_SHA
             and rec.get("target_PR") == AC_TARGET_PR.get(key)
             and att in [dict(a) for a in AC_ATTEMPTS]
-            and rec.get("common") == AC_COMMON)
+            and rec.get("common") == ac_common(key))
 
 
 def _verify_prior_attempt1(key: str, outdir: Path) -> dict:
@@ -429,7 +487,7 @@ def _verify_prior_attempt1(key: str, outdir: Path) -> dict:
     contract = json.loads(raw.decode("utf-8"))
     spec = ckpt.get("spec") or {}
     meta = contract.get("run_meta") or {}
-    c = AC_COMMON
+    c = ac_common(key)
     expect = dict(PR_target=AC_TARGET_PR[key], massflow=float(key),
                   RPM_max=c["rpm_max"], U_tip_max=c["utip_max"],
                   r_tip_max_mm=c["rtip_max"], n_stages_max=c["nstages_max"],
@@ -535,10 +593,15 @@ def cmd_acquire(args) -> int:
                 cwd="<Phy-AC>", target_PR=AC_TARGET_PR[key],
                 target_policy=AC_TARGET_POLICY[key],
                 superseded_targets=AC_SUPERSEDED_TARGETS.get(key, []),
-                common=AC_COMMON,
+                common=ac_common(key),
                 attempt=n, attempt_params=dict(att), timeout_s=timeout_s,
                 timeouts_s=list(AC_TIMEOUTS_S),
                 timeout_policy=AC_TIMEOUT_POLICY, fidelity="L0")
+            sm_exc = AC_SM_FLOW_EXCEPTION.get(key)
+            if sm_exc is not None:
+                recipe.update(sm_flow_min=sm_exc["sm_flow_min"],
+                              sm_flow_policy=sm_exc["policy"],
+                              sm_flow_exception=dict(sm_exc))
             prov = dict(
                 kind="acquired", repo="Phy-AC", repo_url=AC_REPO_URL,
                 ac_commit=st0["head"], branch=st0["branch"],
@@ -550,9 +613,18 @@ def cmd_acquire(args) -> int:
                 ac_interpreter=Path(ac_python()).as_posix(),
                 log_sha256=sha256_file(log), prior_attempts=prior,
                 target_PR=AC_TARGET_PR[key],
-                target_rule=AC_TARGET_POLICY[key])
+                target_rule=AC_TARGET_POLICY[key],
+                feasibility_rule=("spec.constraints completo (todas las g) "
+                                  "con el spec efectivo del checkpoint; "
+                                  f"sm_flow_min={expected_sm_flow_min(key)}"))
+            if sm_exc is not None:
+                prov.update(sm_flow_rule=sm_exc["policy"])
             try:
                 row = _row_from_ac_run(key, outdir, recipe, prov, raw, ckpt)
+                if sm_exc is not None:
+                    row.update(sm_flow_min=sm_exc["sm_flow_min"],
+                               sm_flow_policy=sm_exc["policy"],
+                               sm_flow_exception=dict(sm_exc))
                 check_row(key, row)
             except ScaleError as exc:
                 why = str(exc)
