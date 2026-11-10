@@ -1086,3 +1086,276 @@ def test_resume_cli_rejects_incompatible_checkpoint(tmp_path, capsys):
                    "--no-color", "--outdir", str(tmp_path / "o")])
     out = capsys.readouterr().out
     assert rc == 2 and "could not resume" in out and "búsqueda nueva" in out
+
+
+# =====================================================================
+# Contrato A7 y verificación independiente de una celda (17.1-02, Tarea 2)
+# =====================================================================
+#: θ factible a 8 kg/s con las 26 g y DfAM (búsqueda corta de diagnóstico
+#: de la ola 1 sobre 2c44c7f; en L0 ambas anulares dan el mismo θ salvo la
+#: gate). El punto de operación se toma EXACTO de la fila congelada.
+THETA_8_DIAG = [1.0, 0.625000046, 0.307366741, 0.126953473, 0.578594152,
+                0.704734228, 9.843091112, 10.794938403, 0.681881151,
+                7.181109515, 1.810823879, 2.641562967, 0.541332794,
+                2.181716514, 0.507587533, 0.0, 0.0, 0.0, 0.0, 1200.0]
+
+
+def _theta8(arch="annular"):
+    row = sl.load_inlets()["inlets"]["8"]
+    t = list(THETA_8_DIAG)
+    t[pc.IDX_ARCH] = float(pc.ARCH_NAMES.index(arch))
+    t[pc.IDX_P3_PA], t[pc.IDX_T3_K] = row["P03_Pa"], row["T03_K"]
+    t[pc.IDX_MDOT_KGS] = row["mdot_kg_s"]
+    return t
+
+
+@pytest.fixture(scope="module")
+def cand8(tmp_path_factory):
+    out = {}
+    for arch in ARCHS:
+        t = _theta8(arch)
+        spec = sl.expected_spec("8", arch)
+        raw = sl.export_candidate_contract(
+            t, spec, tmp_path_factory.mktemp(f"c8{arch}"))
+        out[arch] = dict(theta=t, spec=spec, raw=raw,
+                         sha=sl.sha256_bytes(raw))
+    return out
+
+
+def _verify(c, raw=None, **kw):
+    raw = c["raw"] if raw is None else raw
+    kw.setdefault("contract_sha256", sl.sha256_bytes(raw) if raw else None)
+    return sl.verify_scale_candidate(c["theta"], c["spec"], raw,
+                                     expect=dict(arch=c["spec"]["arch"]), **kw)
+
+
+def _mutated(c, fn):
+    d = json.loads(c["raw"].decode("utf-8"))
+    fn(d)
+    return json.dumps(d, indent=1, ensure_ascii=False).encode("utf-8")
+
+
+# ----------------------------------------------------------------- outflow
+@pytest.mark.parametrize("air,fuel,exp", [
+    (8.0, 0.16, 8.16), (8.0, 0.0, 8.0), (0.0, 0.0, 0.0),
+    (8.1234567891, 0.1234567894, round(8.1234567891 + 0.1234567894, 9)),
+    (np.float64(8.0), np.float64(0.183147061), 8.183147061)])
+def test_outflow_sum_of_source_operands(air, fuel, exp):
+    assert gg.mdot_out_kgs({"mdot_air_kgs": air, "mdot_fuel_kgs": fuel}) == exp
+
+
+@pytest.mark.parametrize("bad", [None, True, False, "8.0", -1e-9,
+                                 float("nan"), float("inf"), "missing"])
+@pytest.mark.parametrize("side", ["mdot_air_kgs", "mdot_fuel_kgs"])
+def test_outflow_invalid_operand_is_null(bad, side):
+    rec = {"mdot_air_kgs": 8.0, "mdot_fuel_kgs": 0.16}
+    if bad == "missing":
+        rec.pop(side)
+    else:
+        rec[side] = bad
+    assert gg.mdot_out_kgs(rec) is None
+
+
+def test_outflow_overflow_and_non_dict_are_null():
+    assert gg.mdot_out_kgs({"mdot_air_kgs": 1.7e308,
+                            "mdot_fuel_kgs": 1.7e308}) is None
+    assert gg.mdot_out_kgs(None) is None and gg.mdot_out_kgs([]) is None
+
+
+def test_outflow_contract_field_rounding_and_strict_json():
+    t = np.array(_theta8())
+    rec = _eval(t)
+    c = gg.build_contract(t, rec)
+    d = c["derived"]
+    assert d["mdot_out_kgs"] == round(rec["mdot_air_kgs"]
+                                      + rec["mdot_fuel_kgs"], 9)
+    assert abs(d["mdot_out_kgs"] - (d["mdot_air_kgs"] + d["mdot_fuel_kgs"])) \
+        <= sl.TOL_MDOT_KGS
+    json.dumps(c, allow_nan=False)                 # JSON estricto
+    # el respaldo CFD no sustituye a la suma: sin combustible fuente, null
+    rec2 = dict(rec)
+    rec2.pop("mdot_fuel_kgs")
+    c2 = gg.build_contract(t, rec2)
+    assert c2["derived"]["mdot_out_kgs"] is None
+    assert c2["cfd_boundary_conditions"]["mdot_out_kgs"] is not None
+    assert json.loads(json.dumps(c2, allow_nan=False))["derived"][
+        "mdot_out_kgs"] is None
+
+
+def test_outflow_degenerate_record_stays_infeasible():
+    th = pc.THETA_REF.copy()
+    th[pc.IDX_MDOT_KGS] = 0.0
+    rec = _eval(th)
+    c = gg.build_contract(th, rec)
+    assert c["derived"]["mdot_out_kgs"] == 0.0
+    assert c["derived"]["feasible"] is False and rec["feasible"] is False
+
+
+# ---------------------------------------------------------------- contract
+def test_contract_root_keys_and_paired_cups(cand8):
+    for arch, c in cand8.items():
+        d = json.loads(c["raw"].decode("utf-8"))
+        assert d["schema"] == gg.SCHEMA and d["arch"] == arch
+        assert d["operating_class"] == pc.OPERATING_CLASS_SCALE
+        assert d["scale_policy_revision"] == pc.SCALE_POLICY_REV
+        assert d["tau_max_ms"] == 10.0 and d["operating_warnings"] == []
+        sw, inj = d["swirler"], d["injectors"]
+        # D-386: dimensiones por copa, conteo y áreas; anillo y fase emparejados
+        assert sw["count"] == inj["count"] >= 1
+        if inj["type"] == "vaporizer":     # conserva n_tubes (limitación 5c)
+            assert inj["n_tubes"] == inj["count"]
+        assert sw["A_sw_total_mm2"] == pytest.approx(
+            sw["A_sw_each_mm2"] * sw["count"], rel=1e-6)
+        for k in ("d_hub_mm", "d_tip_mm", "n_vanes"):
+            assert sw[k] > 0
+        assert inj["ring_r_mm"] > 0 and inj["phi0_deg"] == 0.0
+    kj = gg.build_contract(pc.THETA_REF, _eval(pc.THETA_REF))
+    assert kj["operating_class"] == "micro" and kj["scale_policy_revision"] \
+        is None
+
+
+# --------------------------------------------------------- acceptance guard
+def test_acceptance_guard_accepts_reproducible_candidate(cand8):
+    for c in cand8.values():
+        v = _verify(c)
+        assert v["ok"], v["failures"]
+        assert [len(v["g_blocks"][b]) for b, _n in sl.G_BLOCKS] == \
+            [12, 4, 5, 5]
+        assert v["dfam_exported"]["feasible"] is True
+        assert v["P04_closure"]["residual_Pa"] <= v["P04_closure"]["tol_Pa"]
+        assert v["raw_pf"] == v["record"]["PF"]
+
+
+def test_acceptance_guard_rejects_missing_or_foreign_contract(cand8):
+    c = cand8["annular"]
+    assert any(f.startswith("contract_missing") for f in
+               sl.verify_scale_candidate(c["theta"], c["spec"], None)[
+                   "failures"])
+    v = _verify(c, contract_sha256="0" * 64)
+    assert any(f.startswith("contract_hash") for f in v["failures"])
+    other = cand8["reverse_annular"]["raw"]
+    v = _verify(c, raw=other)
+    assert any(f.startswith("contract_arch") for f in v["failures"])
+
+
+def test_acceptance_guard_rejects_foreign_theta_arch_or_point(cand8):
+    c = dict(cand8["annular"])
+    v = _verify(dict(c, theta=_theta8("reverse_annular")))
+    assert any(f.startswith("theta_arch") for f in v["failures"])
+    t = list(c["theta"])
+    t[pc.IDX_P3_PA] += 1.0
+    v = _verify(dict(c, theta=t))
+    assert any(f.startswith("theta_point") for f in v["failures"])
+    v = sl.verify_scale_candidate(c["theta"], c["spec"], c["raw"],
+                                  expect=dict(arch="annular",
+                                              P03_Pa=c["theta"][16] + 1.0))
+    assert any(f.startswith("theta_point") for f in v["failures"])
+
+
+@pytest.mark.parametrize("val", [None, "8.18", True, -1.0, 8.5])
+def test_acceptance_guard_rejects_invalid_a7(cand8, val):
+    c = cand8["annular"]
+    raw = _mutated(c, lambda d: d["derived"].__setitem__("mdot_out_kgs", val))
+    v = _verify(c, raw=raw)
+    assert any(f.startswith("A7") for f in v["failures"]), v["failures"]
+
+
+@pytest.mark.parametrize("edit", [
+    lambda d: d["derived"].__setitem__("source", "crn_L1(timeout→L0)"),
+    lambda d: d["run_meta"].__setitem__("fidelity", "L1")])
+def test_acceptance_guard_rejects_degraded_fidelity(cand8, edit):
+    c = cand8["annular"]
+    v = _verify(c, raw=_mutated(c, edit))
+    assert any(f.startswith("contract_fidelity") for f in v["failures"])
+
+
+@pytest.mark.parametrize("g,code", [
+    ([-0.1] * 25 + [0.2], "g_positive"),
+    ([-0.1] * 25 + [float("nan")], "g_nonfinite"),
+    ([-0.1] * 21, "g_missing")])
+def test_acceptance_guard_rejects_bad_g(cand8, g, code):
+    c = cand8["annular"]
+    v = _verify(c, constraints_fn=lambda rec, t: g)
+    assert any(f.startswith(code) for f in v["failures"]), v["failures"]
+
+
+def test_acceptance_guard_rejects_absent_neutral_or_disabled_dfam(cand8):
+    c = cand8["annular"]
+    v = _verify(c, dfam_fn=lambda: None)
+    assert any(f.startswith("dfam_checker_missing") for f in v["failures"])
+
+    class _Neutral:
+        G_NAMES = gg._dfam().G_NAMES
+
+        @staticmethod
+        def check(contract, **kw):
+            return dict(g_dfam=[-1.0] * 5, feasible=True, violations=[])
+    v = _verify(c, dfam_fn=lambda: _Neutral)
+    assert any(f.startswith("dfam_checker_neutral") for f in v["failures"])
+    v = _verify(dict(c, spec=dict(c["spec"], dfam=False)))
+    assert any(f.startswith("no_dfam") for f in v["failures"])
+
+
+def test_acceptance_guard_partial_or_timeout_cell_is_blocked(tmp_path):
+    row = sl.load_inlets()["inlets"]["8"]
+    st = sl.ACCEPT_STAGES[0]
+    run = dict(rc=None, timed_out=True, elapsed_s=120.0)
+    cell = sl.assess_cell("8", "annular", st, tmp_path, run, row)
+    assert cell["status"] == "blocked" and cell["cause"].startswith("timeout")
+    run = dict(rc=0, timed_out=False, elapsed_s=3.0)
+    cell = sl.assess_cell("8", "annular", st, tmp_path / "vacio", run, row)
+    assert cell["status"] == "blocked" and "parcial" in cell["cause"]
+
+
+def _chain_with_pf(pf, missing=False):
+    def chain(theta, gates, dp, material, use_cantera):
+        return {"pf": {} if missing else {"PF": pf}}
+    return chain
+
+
+@pytest.mark.parametrize("pf,missing,code", [
+    (None, True, "raw_pf_missing"), (float("nan"), False, "raw_pf_nonfinite"),
+    (float("inf"), False, "raw_pf_nonfinite"), (True, False, "raw_pf_type"),
+    (-0.1, False, "raw_pf_negative")])
+def test_acceptance_guard_raw_pf(cand8, pf, missing, code):
+    """El record publicado lleva PF = 0 (lo que dejaría `_safe`) y pasa el g
+    de PF; el guard mira la cadena y falla igualmente."""
+    c = cand8["annular"]
+    rec = dict(_eval(np.array(c["theta"])), PF=0.0)
+    contract = json.loads(c["raw"].decode("utf-8"))
+    contract["derived"]["PF"] = 0.0
+    assert rec["PF"] / 0.40 - 1.0 < 0.0             # el g de PF «pasa»
+    raw, fails = sl.raw_pf_guard(c["theta"], rec, contract, 0.40,
+                                 chain_fn=_chain_with_pf(pf, missing))
+    assert raw is None and fails and fails[0].startswith(code)
+    v = _verify(c, chain_fn=_chain_with_pf(pf, missing))
+    assert any(f.startswith(code) for f in v["failures"])
+
+
+def test_acceptance_guard_raw_pf_true_zero_is_distinguished(cand8):
+    c = cand8["annular"]
+    rec = dict(_eval(np.array(c["theta"])), PF=0.0)
+    contract = {"derived": {"PF": 0.0}}
+    raw, fails = sl.raw_pf_guard(c["theta"], rec, contract, 0.40,
+                                 chain_fn=_chain_with_pf(0.0))
+    assert raw == 0.0 and fails == []
+    # y el PF crudo real coincide con el record y el contrato del candidato
+    rec_real = _eval(np.array(c["theta"]))
+    raw, fails = sl.raw_pf_guard(c["theta"], rec_real,
+                                 json.loads(c["raw"].decode("utf-8")), 0.40)
+    assert fails == [] and raw == rec_real["PF"] and 0.0 < raw < 0.40
+
+
+def test_acceptance_guard_verify_candidate_cli(cand8, tmp_path, capsys):
+    c = cand8["reverse_annular"]
+    (tmp_path / "combustor.json").write_bytes(c["raw"])
+    cand = dict(theta=c["theta"], spec=c["spec"],
+                contract_path="combustor.json",
+                expect=dict(arch="reverse_annular"))
+    p = tmp_path / "cand.json"
+    p.write_text(json.dumps(cand), encoding="utf-8")
+    assert sl.main(["verify-candidate", "--candidate", str(p)]) == 0
+    cand["theta"] = _theta8("annular")
+    p.write_text(json.dumps(cand), encoding="utf-8")
+    assert sl.main(["verify-candidate", "--candidate", str(p)]) == 1
+    assert "theta_arch" in capsys.readouterr().out

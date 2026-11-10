@@ -8,6 +8,17 @@ Subcomandos (ejecutar desde el checkout ORIGINAL de Phy-CB):
     python -B -X utf8 validation/scale_l0.py diagnose --mass 8 --out-root DIR
     python -B -X utf8 validation/scale_l0.py check-inlets
     python -B -X utf8 validation/scale_l0.py verify-handoff --wave 1 --summary F
+    python -B -X utf8 validation/scale_l0.py accept   --mass 8 --out-root DIR
+    python -B -X utf8 validation/scale_l0.py verify   --masses 8
+    python -B -X utf8 validation/scale_l0.py verify-candidate --candidate F
+    python -B -X utf8 validation/scale_l0.py verify-handoff --wave 2 --summary F
+
+`accept` (17.1-02) corre por la CLI normal de Phy-CB una búsqueda L0 por
+arquitectura anular con la descarga congelada del caudal, determina el θ
+seleccionado desde el checkpoint y el contrato exportado, lo verifica de
+forma independiente (`verify_scale_candidate`) y guarda la celda en
+`validation/scale_acceptance.json`. `verify` repite esa verificación sobre
+el archivo sin lanzar ninguna búsqueda.
 
 `acquire` lanza Phy-AC (checkout original fijado a `AC_PINNED_SHA`, árbol
 limpio antes y después) con una receta L0 congelada, toma del contrato
@@ -43,6 +54,8 @@ import sys
 import time
 import uuid
 from pathlib import Path
+
+import numpy as np
 
 CB_ROOT = Path(__file__).resolve().parents[1]
 VALIDATION_DIR = CB_ROOT / "validation"
@@ -998,26 +1011,28 @@ SUMMARY_FIELDS = ("model_basis_sha", "inlets_sha256", "basis_sha256",
                   "inlets_count", "engineering_gate")
 
 
-def parse_summary_fields(text: str) -> dict:
+def parse_summary_fields(text: str, fields=SUMMARY_FIELDS) -> dict:
     """Campos `clave: valor` de UNA línea; una clave repetida es error."""
     found: dict = {}
     for line in text.splitlines():
         m = re.fullmatch(r"\s*-?\s*`?([a-z_0-9]+)`?\s*:\s*`?([^`\s]+)`?\s*",
                          line)
-        if m and m.group(1) in SUMMARY_FIELDS:
+        if m and m.group(1) in fields:
             if m.group(1) in found and found[m.group(1)] != m.group(2):
                 raise ScaleError(f"campo repetido con valores distintos: "
                                  f"{m.group(1)}")
             found[m.group(1)] = m.group(2)
-    missing = [f for f in SUMMARY_FIELDS if f not in found]
+    missing = [f for f in fields if f not in found]
     if missing:
         raise ScaleError(f"faltan campos en el SUMMARY: {missing}")
     return found
 
 
 def cmd_verify_handoff(args) -> int:
+    if args.wave == 2:
+        return cmd_verify_handoff_2(args)
     if args.wave != 1:
-        raise ScaleError("sólo se define el handoff de la ola 1")
+        raise ScaleError("sólo se definen los handoff de las olas 1 y 2")
     f = parse_summary_fields(Path(args.summary).read_text(encoding="utf-8"))
     for k in ("model_basis_sha",):
         if not re.fullmatch(r"[0-9a-f]{40}", f[k]):
@@ -1061,6 +1076,806 @@ def cmd_check_inlets(args) -> int:
     return 0
 
 
+# ============================================================ ola 2 (17.1-02)
+#: Aceptación de la matriz de escala (D-377–D-379, D-381). Una celda es UNA
+#: búsqueda por la CLI normal con una arquitectura explícita, la descarga
+#: congelada del caudal y esta receta; la factibilidad la decide la
+#: verificación independiente, nunca el código de salida de la CLI.
+ACCEPT_SCHEMA = "phycb.scale_acceptance/1"
+ACCEPTANCE_PATH = VALIDATION_DIR / "scale_acceptance.json"
+ACCEPT_ARCHS = ("annular", "reverse_annular")
+ACCEPT_RECIPE = dict(fidelity="L0", t4=1200.0, t4_max=1250.0, fuel="jet_a",
+                     material="Inconel-625", material_casing="Inconel-718",
+                     dp_max=0.04, pf_max=0.40, dfam=True, workers=1,
+                     figures=False)
+#: Etapa 1 y ÚNICA escalada predefinida; si escala, se reintentan AMBAS.
+ACCEPT_STAGES = (dict(stage=1, seed=71, n_init=320, rounds=5, batch_size=14),
+                 dict(stage=2, seed=137, n_init=480, rounds=7, batch_size=18))
+ACCEPT_TIMEOUT_S = 120.0
+T04_TARGET_K = 1200.0
+T04_CAP_K = 1250.0
+TOL_MDOT_KGS = 2e-9
+G_BLOCKS = (("aero", 12), ("spec", 4), ("struct", 5), ("dfam", 5))
+G_SPEC_NAMES = ("spec_dp_max", "spec_PF_max", "spec_envelope_D",
+                "spec_envelope_L")
+G_STRUCT_NAMES = ("T_wall", "sigma_th", "hoop", "t_wall", "banned")
+DFAM_NEUTRAL = [-1.0] * 5
+SUMMARY_FIELDS_2 = ("model_source_sha", "pilot_evidence_commit",
+                    "pilot_evidence_sha256", "pilot_acceptance_count")
+EVIDENCE_REL = "validation/scale_acceptance.json"
+
+
+def _strict_json(data: bytes):
+    def _bad(tok):
+        raise ValueError(f"constante JSON no estricta: {tok}")
+    return json.loads(data.decode("utf-8"), parse_constant=_bad)
+
+
+def _r9(x) -> float:
+    return float(round(float(x), 9))
+
+
+def _g_names(dc) -> list[str]:
+    import physics_core as pc
+    return (list(pc.CONSTRAINT_NAMES) + list(G_SPEC_NAMES)
+            + list(G_STRUCT_NAMES) + list(dc.G_NAMES))
+
+
+def expected_spec(key: str, arch: str) -> dict:
+    """Spec efectivo que la receta exige a la CLI para (caudal, arquitectura)."""
+    row = load_inlets()["inlets"][key]
+    r = ACCEPT_RECIPE
+    return dict(P3_Pa=float(row["P03_Pa"]), T3_K=float(row["T03_K"]),
+                mdot_kgs=float(row["mdot_kg_s"]), T4_K=r["t4"], fuel=r["fuel"],
+                dp_max=r["dp_max"], arch=arch, material=r["material"],
+                material_casing=r["material_casing"], PF_max=r["pf_max"],
+                envelope_D_mm=None, envelope_L_mm=None, dfam=True,
+                fixed_vars={})
+
+
+def _real_dfam():
+    """`dfam_checker` REAL del checkout original (o None)."""
+    try:
+        _pc, no, _gg, dc = _import_cb()
+    except Exception:
+        return None
+    if Path(dc.__file__).resolve().parent != CB_ROOT.resolve():
+        return None
+    if no._dfam_module() is None:
+        return None
+    return dc
+
+
+def rebuild_exported_contract(theta, rec: dict, spec) -> dict:
+    """Contrato exportado reconstruido como lo escribe la CLI
+    (`emit_deliverables` → `geometry_generator.generate`): estructura del
+    spec, dos pasadas del checker DfAM y JSON limpio."""
+    _pc, _no, gg, dc = _import_cb()
+    import structures_core as sc
+    t = np.asarray(theta, dtype=float)
+    structural = sc.evaluate_structural(t, rec, material=spec.material,
+                                        material_casing=spec.material_casing)
+    c = gg.build_contract(t, rec, structural, None)
+    for _ in range(2):
+        res = dc.check(c, build_orientation="z+", voxel_mm=gg.VOXEL_DEFAULT_MM)
+        gg.apply_dfam(c, res)
+    return gg._clean(c)
+
+
+def export_candidate_contract(theta, spec_kw: dict, outdir: Path) -> bytes:
+    """Escribe el paquete de geometría como la CLI y devuelve los bytes de
+    `combustor.json` (lo usan las pruebas y `verify-candidate`)."""
+    pc, no, gg, _dc = _import_cb()
+    import structures_core as sc
+    t = np.asarray(theta, dtype=float)
+    spec = no.DesignSpec(**spec_kw)
+    rec = pc.evaluate(t, fidelity=pc.Fidelity.L0, use_cache=False,
+                      calibrate=False)
+    st = sc.evaluate_structural(t, rec, material=spec.material,
+                                material_casing=spec.material_casing)
+    geo = Path(outdir) / "geometry"
+    gg.generate(t, rec, str(geo), structural=st,
+                voxel_mm=gg.VOXEL_DEFAULT_MM, step=False, log=lambda *a: None)
+    return (geo / "combustor.json").read_bytes()
+
+
+def raw_pf_guard(theta, rec: dict, contract: dict | None, pf_max: float,
+                 chain_fn=None) -> tuple:
+    """PF CRUDO de la cadena L0 (antes de `_record_from_chain`/`_safe`).
+
+    Usa los mismos θ, gates, material y Δp/p que la evaluación L0 por
+    defecto y `use_cantera=False`. Exige PF presente, real, finito y no
+    negativo, igual al del record (y al del contrato a 9 decimales) y no
+    mayor que el tope del spec. Un PF sanitizado a 0 en el record publicado
+    NO lo salva: el control mira la cadena. El arreglo de producción de PF
+    queda para 18-02; esto es un control del arnés."""
+    pc = _import_cb()[0]
+    t = np.asarray(theta, dtype=float)
+    fn = chain_fn or pc._l0_chain
+    try:
+        ch = fn(t, pc.decode_gates(t), pc.coeffs()["dp_over_p"],
+                pc.MATERIAL_DEFAULT, False)
+        raw = ch["pf"]["PF"]
+    except Exception as exc:
+        return None, [f"raw_pf_missing: PF ausente en la cadena L0 "
+                      f"({type(exc).__name__}: {exc})"]
+    if isinstance(raw, (bool, np.bool_)) or not isinstance(
+            raw, (int, float, np.integer, np.floating)):
+        return None, [f"raw_pf_type: PF de la cadena no es real ({raw!r})"]
+    raw = float(raw)
+    if not math.isfinite(raw):
+        return None, [f"raw_pf_nonfinite: PF de la cadena = {raw!r}"]
+    if raw < 0.0:
+        return None, [f"raw_pf_negative: PF de la cadena = {raw!r}"]
+    fails = []
+    rpf = rec.get("PF") if isinstance(rec, dict) else None
+    if not _finite(rpf) or abs(raw - float(rpf)) > 1e-12 * max(1.0, abs(raw)):
+        fails.append(f"raw_pf_record: PF crudo {raw!r} ≠ record {rpf!r}")
+    if contract is not None:
+        cpf = (contract.get("derived") or {}).get("PF")
+        if not _finite(cpf) or abs(_r9(raw) - float(cpf)) > 1e-12:
+            fails.append(f"raw_pf_contract: PF crudo {raw!r} ≠ contrato "
+                         f"{cpf!r}")
+    if raw > float(pf_max):
+        fails.append(f"raw_pf_cap: PF crudo {raw:.6f} > tope {pf_max}")
+    return raw, fails
+
+
+def verify_scale_candidate(theta, spec_kw: dict, contract_bytes, *,
+                           expect: dict | None = None,
+                           contract_sha256: str | None = None,
+                           constraints_fn=None, chain_fn=None,
+                           dfam_fn=None) -> dict:
+    """Verificación INDEPENDIENTE de un candidato de la clase de escala.
+
+    Reevalúa θ con `physics_core.evaluate` (L0, sin caché ni calibración) y
+    `DesignSpec.constraints` con el spec completo; exige los cuatro bloques
+    12/4/5/5 de g finitos y ≤ 0, el checker DfAM real sobre el contrato
+    exportado, la identidad de clase, revisión, τ, fidelidad y
+    arquitectura, el contrato reproducible, T04/P04 y A7 y el PF crudo.
+    Devuelve `{ok, failures, ...}`; nunca lanza por un candidato malo.
+    `constraints_fn`, `chain_fn` y `dfam_fn` sólo existen para los dobles
+    de las pruebas focalizadas."""
+    pc, no, gg, _dc = _import_cb()
+    fails: list[str] = []
+    out: dict = dict(ok=False, failures=fails)
+    expect = dict(expect or {})
+
+    contract = None
+    if not contract_bytes:
+        fails.append("contract_missing: no hay contrato exportado")
+    else:
+        sha = sha256_bytes(contract_bytes)
+        out["contract_sha256"] = sha
+        if contract_sha256 is not None and sha != contract_sha256:
+            fails.append(f"contract_hash: {sha} ≠ {contract_sha256}")
+        try:
+            contract = _strict_json(contract_bytes)
+        except Exception as exc:
+            fails.append(f"contract_json: {type(exc).__name__}: {exc}")
+
+    if (not isinstance(theta, (list, tuple, np.ndarray))
+            or len(theta) != pc.NDIM
+            or not all(_finite(x if isinstance(x, (bool, int, float, str))
+                               else float(x)) for x in theta)):
+        fails.append("theta_invalid: θ ausente, corto o no finito")
+        return out
+    t = np.asarray(theta, dtype=float)
+    out["theta"] = [float(x) for x in t]
+    try:
+        spec = no.DesignSpec(**dict(spec_kw))
+    except Exception as exc:
+        fails.append(f"spec_invalid: {type(exc).__name__}: {exc}")
+        return out
+    r = ACCEPT_RECIPE
+    if not spec.dfam:
+        fails.append("no_dfam: la aceptación exige DfAM activo (D-379)")
+    for name, want in (("material", r["material"]),
+                       ("material_casing", r["material_casing"]),
+                       ("fuel", r["fuel"]), ("dp_max", r["dp_max"]),
+                       ("PF_max", r["pf_max"]), ("T4_K", r["t4"]),
+                       ("envelope_D_mm", None), ("envelope_L_mm", None),
+                       ("fixed_vars", {})):
+        if getattr(spec, name) != want:
+            fails.append(f"spec_recipe: {name}={getattr(spec, name)!r} "
+                         f"(receta {want!r})")
+    op = spec.operating
+    if op is None or op["class_id"] != pc.OPERATING_CLASS_SCALE:
+        fails.append(f"class: el spec no es de la clase "
+                     f"{pc.OPERATING_CLASS_SCALE}")
+    arch = pc.decode_gates(t)["arch"]
+    out["arch"] = arch
+    if spec.arch is None:
+        fails.append("arch_not_fixed: la celda exige arquitectura explícita")
+    if spec.arch is not None and arch != spec.arch:
+        fails.append(f"theta_arch: θ trae {arch}, el spec {spec.arch}")
+    if expect.get("arch") and (arch != expect["arch"]
+                               or spec.arch != expect["arch"]):
+        fails.append(f"theta_arch: se esperaba {expect['arch']}")
+    point = (spec.P3_Pa, spec.T3_K, spec.mdot_kgs, spec.T4_K)
+    if tuple(float(x) for x in t[16:20]) != point:
+        fails.append("theta_point: el punto de operación de θ no es el del "
+                     "spec")
+    for k, idx in (("P03_Pa", 16), ("T03_K", 17), ("mdot_kg_s", 18)):
+        if k in expect and float(t[idx]) != float(expect[k]):
+            fails.append(f"theta_point: θ[{idx}]={t[idx]!r} ≠ descarga "
+                         f"{expect[k]!r}")
+    if not np.array_equal(spec.fix_operating_point(t), t):
+        fails.append("theta_point: θ no es un punto fijo del spec "
+                     "(combustible o fixed_vars)")
+
+    rec = pc.evaluate(t, fidelity=pc.Fidelity.L0, use_cache=False,
+                      calibrate=False)
+    src = str(rec.get("source", ""))
+    if ("degenerate" in src or rec.get("fidelity_achieved") != "L0"
+            or rec.get("fidelity_requested") != "L0"
+            or rec.get("fidelity_degradation") is not None):
+        fails.append(f"fidelity: record {src!r} no es L0 alcanzado")
+    if rec.get("operating_class") != pc.OPERATING_CLASS_SCALE:
+        fails.append(f"class: record {rec.get('operating_class')!r}")
+    if rec.get("scale_policy_rev") != pc.SCALE_POLICY_REV:
+        fails.append(f"policy_rev: record {rec.get('scale_policy_rev')!r}")
+    if rec.get("tau_max_ms_applied") != pc.SCALE_TAU_MAX_MS:
+        fails.append(f"tau_limit: record {rec.get('tau_max_ms_applied')!r}")
+
+    # --- g: cuatro bloques 12/4/5/5 finitos y ≤ 0 ---------------------------
+    try:
+        g = (constraints_fn or spec.constraints)(rec, t)
+        g = [float(x) for x in g]
+    except Exception as exc:
+        g = None
+        fails.append(f"g_missing: {type(exc).__name__}: {exc}")
+    dcm = dfam_fn() if dfam_fn is not None else _real_dfam()
+    names = _g_names(dcm or _dc)
+    if g is not None:
+        if len(g) != sum(n for _b, n in G_BLOCKS):
+            fails.append(f"g_missing: {len(g)} valores (se exigen 12/4/5/5)")
+        elif not all(math.isfinite(x) for x in g):
+            fails.append("g_nonfinite: g con NaN/inf")
+        else:
+            pos = [f"{n}={v:+.4g}" for n, v in zip(names, g) if v > 0.0]
+            if pos:
+                fails.append("g_positive: " + ", ".join(pos))
+            i = 0
+            blocks = {}
+            for b, n in G_BLOCKS:
+                blocks[b] = dict(zip(names[i:i + n], g[i:i + n]))
+                i += n
+            out["g_blocks"] = blocks
+        out["g"] = g
+
+    # --- checker DfAM real sobre el contrato del lazo y el exportado -------
+    if dcm is None:
+        fails.append("dfam_checker_missing: sin checker DfAM real")
+    else:
+        try:
+            inloop = [float(x) for x in dcm.check(
+                gg.build_contract(t, rec, None, None))["g_dfam"]]
+        except Exception as exc:
+            inloop = None
+            fails.append(f"dfam_checker: {type(exc).__name__}: {exc}")
+        if inloop is not None:
+            if inloop == DFAM_NEUTRAL:
+                fails.append("dfam_checker_neutral: g_dfam neutro")
+            if g is not None and len(g) == 26 and g[21:26] != inloop:
+                fails.append("dfam_inloop_mismatch: el bloque DfAM de g no "
+                             "es el del checker")
+        if contract is not None:
+            try:
+                ex = dcm.check(contract)
+                gx = [float(x) for x in ex["g_dfam"]]
+                out["dfam_exported"] = dict(g_dfam=gx,
+                                            feasible=bool(ex["feasible"]),
+                                            violations=list(
+                                                ex.get("violations") or []))
+                if (len(gx) != 5 or not all(math.isfinite(x) for x in gx)
+                        or any(x > 0.0 for x in gx) or not ex["feasible"]):
+                    fails.append(f"dfam_exported: contrato exportado no "
+                                 f"imprimible {gx}")
+                if gx == DFAM_NEUTRAL:
+                    fails.append("dfam_checker_neutral: g_dfam neutro en el "
+                                 "contrato exportado")
+            except Exception as exc:
+                fails.append(f"dfam_exported: {type(exc).__name__}: {exc}")
+
+    # --- contrato ------------------------------------------------------------
+    if contract is not None:
+        _check_contract(contract, t, rec, spec, arch, fails, out)
+
+    # --- PF crudo ------------------------------------------------------------
+    raw, pf_fails = raw_pf_guard(t, rec, contract, spec.PF_max,
+                                 chain_fn=chain_fn)
+    out["raw_pf"] = raw
+    fails += pf_fails
+    out["record"] = {k: rec.get(k) for k in (
+        "eta_comb", "dp_over_p", "PF", "T_wall_max_K", "EI_NOx", "tau_ms",
+        "phi_pz", "LBO_margin", "D_casing_mm", "L_tot_mm", "D_L_mm",
+        "h_L_mm", "T04_K", "P04_Pa", "mdot_air_kgs", "mdot_fuel_kgs",
+        "mdot4_kgs", "source", "operating_class", "scale_policy_rev",
+        "tau_max_ms_applied", "fidelity_achieved")}
+    out["ok"] = not fails
+    return out
+
+
+def _check_contract(c: dict, t, rec: dict, spec, arch: str, fails: list,
+                    out: dict) -> None:
+    pc, _no, gg, _dc = _import_cb()
+    if c.get("schema") != gg.SCHEMA:
+        fails.append(f"contract_schema: {c.get('schema')!r}")
+    if c.get("arch") != arch:
+        fails.append(f"contract_arch: {c.get('arch')!r} ≠ {arch}")
+    dv = c.get("design_vector") or {}
+    if any(dv.get(n) != _r9(x) for n, x in zip(pc.VAR_NAMES, t)):
+        fails.append("contract_theta: design_vector no es el θ verificado")
+    if c.get("operating_class") != pc.OPERATING_CLASS_SCALE:
+        fails.append(f"contract_class: {c.get('operating_class')!r}")
+    if c.get("scale_policy_revision") != pc.SCALE_POLICY_REV:
+        fails.append(f"contract_policy_rev: "
+                     f"{c.get('scale_policy_revision')!r}")
+    if c.get("tau_max_ms") != pc.SCALE_TAU_MAX_MS:
+        fails.append(f"contract_tau: {c.get('tau_max_ms')!r}")
+    d = c.get("derived") or {}
+    src = str(d.get("source", ""))
+    if ((c.get("run_meta") or {}).get("fidelity") != "L0" or "→" in src
+            or "degenerate" in src or src != rec.get("source")):
+        fails.append(f"contract_fidelity: {src!r} / "
+                     f"{(c.get('run_meta') or {}).get('fidelity')!r}")
+    # T04
+    T04 = d.get("T04_K")
+    if not _finite(T04) or not (0.0 < T04 <= T04_CAP_K) \
+            or abs(T04 - T04_TARGET_K) > 1e-6 \
+            or T04 != float(round(rec.get("T04_K", float("nan")), 6)):
+        fails.append(f"T04: {T04!r} (objetivo {T04_TARGET_K}, tope "
+                     f"{T04_CAP_K})")
+    # P04 = P03·(1 − Δp/p)
+    P04, dp, P03 = d.get("P04_Pa"), d.get("dp_over_p"), float(t[16])
+    if not (_finite(P04) and P04 > 0.0 and _finite(dp)):
+        fails.append(f"P04: {P04!r}")
+    else:
+        resid = abs(P04 - P03 * (1.0 - dp))
+        tol = 5e-4 + 5e-10 * P03 + 8.0 * sys.float_info.epsilon * P03
+        out["P04_closure"] = dict(P03_Pa=P03, P04_Pa=P04, dp_over_p=dp,
+                                  residual_Pa=resid, tol_Pa=tol)
+        if resid > tol:
+            fails.append(f"P04_closure: |P04 − P03(1−Δp/p)| = {resid:.3g} Pa "
+                         f"> {tol:.3g}")
+        if P04 != float(round(rec.get("P04_Pa", float("nan")), 3)):
+            fails.append("P04: el contrato no publica el P04 del record")
+    # A7: caudal total
+    mo = d.get("mdot_out_kgs")
+    ma, mf = d.get("mdot_air_kgs"), d.get("mdot_fuel_kgs")
+    src_sum = gg.mdot_out_kgs(rec)
+    if (not _finite(mo) or mo <= 0.0 or not _finite(ma) or not _finite(mf)
+            or abs(mo - (ma + mf)) > TOL_MDOT_KGS or src_sum is None
+            or mo != src_sum or ma != _r9(spec.mdot_kgs)):
+        fails.append(f"A7: mdot_out_kgs={mo!r} aire={ma!r} comb={mf!r} "
+                     f"(suma fuente {src_sum!r})")
+    else:
+        out["mdot_out"] = dict(mdot_out_kgs=mo, mdot_air_kgs=ma,
+                               mdot_fuel_kgs=mf,
+                               residual_kgs=abs(mo - (ma + mf)))
+    # contrato reproducible (dimensiones, DfAM aplicado, estructura)
+    try:
+        rebuilt = rebuild_exported_contract(t, rec, spec)
+        if json.dumps(rebuilt, sort_keys=True) != json.dumps(c, sort_keys=True):
+            fails.append("contract_reproducible: el contrato exportado no es "
+                         "el que reconstruye el θ verificado")
+    except Exception as exc:
+        fails.append(f"contract_reproducible: {type(exc).__name__}: {exc}")
+    st = c.get("structural") or {}
+    if not st.get("feasible"):
+        fails.append("contract_structural: márgenes estructurales violados")
+    out["dims"] = {k: d.get(k) for k in ("D_L_mm", "D_casing_mm", "L_tot_mm",
+                                         "A_ref_mm2", "tau_ms", "dp_over_p",
+                                         "PF", "eta_comb")}
+
+
+def select_from_checkpoint(ck_path: Path, contract: dict) -> dict:
+    """θ realmente seleccionado por la CLI, sin confiar en el código de
+    salida: el design_vector del contrato exportado debe identificar UN θ
+    del checkpoint (a 9 decimales) y ese θ debe ser el incumbente que da la
+    regla vigente (máximo de `scalar_fitness` sobre todas las evaluaciones
+    físicas, el primero en caso de empate, como `_update_best`). El load
+    también valida revisión, clase, fidelidad y filas del checkpoint."""
+    pc, no, _gg, _dc = _import_cb()
+    payload = json.loads(Path(ck_path).read_text(encoding="utf-8"))
+    d = no.AutonomousCombustorDesigner.load(str(ck_path),
+                                            fidelity=pc.Fidelity.L0,
+                                            log=lambda *a: None)
+    best = None
+    for i, r in enumerate(d.recs):
+        t = np.asarray(r["_theta"], dtype=float)
+        fit = no.scalar_fitness(d.spec, r, t)
+        if best is None or fit > best[2]:
+            best = (i, t, fit)
+    dv = contract.get("design_vector") or {}
+    match = {tuple(r["_theta"]) for r in d.recs
+             if all(dv.get(n) == _r9(x)
+                    for n, x in zip(pc.VAR_NAMES, r["_theta"]))}
+    if len(match) != 1:
+        raise ScaleError(f"identidad de θ: el contrato casa con {len(match)} "
+                         "θ distintos del checkpoint")
+    if tuple(best[1].tolist()) not in match:
+        raise ScaleError("regla de selección: el θ del contrato no es el "
+                         "incumbente del checkpoint")
+    spec_kw = {k: v for k, v in payload["spec"].items()
+               if not k.startswith("_")}
+    return dict(theta=[float(x) for x in best[1]], row_index=int(best[0]),
+                fitness=float(best[2]), n_evals=len(d.recs), spec=spec_kw,
+                rule="max scalar_fitness sobre todas las evaluaciones "
+                     "físicas (primer máximo)")
+
+
+def _accept_argv(row: dict, arch: str, stage: dict, outdir: Path) -> list:
+    r = ACCEPT_RECIPE
+    return ["phycb_cli.py", "--optimize", "--fidelity", r["fidelity"],
+            "--mdot", repr(float(row["mdot_kg_s"])),
+            "--p3", repr(float(row["P03_Pa"])),
+            "--t3", repr(float(row["T03_K"])), "--t4", repr(r["t4"]),
+            "--arch", arch, "--fuel", r["fuel"], "--material", r["material"],
+            "--material-casing", r["material_casing"],
+            "--dp-max", repr(r["dp_max"]), "--pf-max", repr(r["pf_max"]),
+            "--seed", str(stage["seed"]), "--n-init", str(stage["n_init"]),
+            "--rounds", str(stage["rounds"]),
+            "--batch-size", str(stage["batch_size"]),
+            "--workers", str(r["workers"]), "--no-figures", "--no-color",
+            "--outdir", str(outdir)]
+
+
+def _run_cell_process(argv: list, log_path: Path,
+                      timeout_s: float = ACCEPT_TIMEOUT_S) -> dict:
+    t0 = time.time()
+    started = _now()
+    try:
+        p = subprocess.run([sys.executable, "-B", "-X", "utf8", *argv],
+                           cwd=str(CB_ROOT), capture_output=True,
+                           timeout=timeout_s)
+        rc, timed_out, raw = p.returncode, False, p.stdout + p.stderr
+    except subprocess.TimeoutExpired as exc:
+        rc, timed_out = None, True
+        raw = (exc.stdout or b"") + (exc.stderr or b"")
+    log_path.write_bytes(raw)
+    return dict(rc=rc, timed_out=timed_out, started_utc=started,
+                finished_utc=_now(), elapsed_s=round(time.time() - t0, 3),
+                log=str(log_path), log_sha256=sha256_bytes(raw),
+                interpreter=sys.executable)
+
+
+def assess_cell(key: str, arch: str, stage: dict, outdir: Path,
+                run: dict, row: dict) -> dict:
+    """Celda a partir de una corrida: `accepted` sólo si hay contrato,
+    checkpoint y selección identificables y la verificación independiente
+    pasa. Timeout, archivo ausente o fallo de traza = `blocked`."""
+    cell = dict(key=f"{key}/{arch}", mass=key, arch=arch,
+                stage=stage["stage"], budget=dict(stage), status="blocked",
+                cause=None, run=run, outdir=str(outdir),
+                argv=_accept_argv(row, arch, stage, Path("<outdir>")),
+                inlet=dict(key=key, mdot_kg_s=row["mdot_kg_s"],
+                           P03_Pa=row["P03_Pa"], T03_K=row["T03_K"],
+                           contract_sha256=row["contract"]["sha256"],
+                           run_id=row["provenance"].get("run_id"),
+                           ac_commit=row["provenance"].get("ac_commit")))
+    if run.get("timed_out"):
+        cell["cause"] = (f"timeout: la búsqueda superó "
+                         f"{ACCEPT_TIMEOUT_S:g} s")
+        return cell
+    ck = Path(outdir) / "phycb_run.json"
+    cpath = Path(outdir) / "geometry" / "combustor.json"
+    missing = [p.name for p in (ck, cpath) if not p.exists()]
+    if missing:
+        cell["cause"] = f"resultado parcial: faltan {missing} (rc {run.get('rc')})"
+        return cell
+    cb = cpath.read_bytes()
+    try:
+        contract = _strict_json(cb)
+        sel = select_from_checkpoint(ck, contract)
+    except Exception as exc:
+        cell["cause"] = f"traza: {type(exc).__name__}: {exc}"
+        return cell
+    want = expected_spec(key, arch)
+    diff = {k: (sel["spec"].get(k), v) for k, v in want.items()
+            if sel["spec"].get(k) != v}
+    v = verify_scale_candidate(sel["theta"], sel["spec"], cb,
+                               expect=dict(arch=arch, P03_Pa=row["P03_Pa"],
+                                           T03_K=row["T03_K"],
+                                           mdot_kg_s=row["mdot_kg_s"]),
+                               contract_sha256=sha256_bytes(cb))
+    arts = {}
+    for name in ("phycb_run.json", "dataset.csv", "report.html"):
+        p = Path(outdir) / name
+        arts[name] = dict(path=str(p), sha256=sha256_file(p)) \
+            if p.exists() else None
+    cell.update(theta=sel["theta"], spec=sel["spec"], selection={
+        k: sel[k] for k in ("row_index", "fitness", "n_evals", "rule")},
+        contract=dict(sha256=sha256_bytes(cb), size_bytes=len(cb),
+                      encoding="lzma+base64", data=encode_bytes(cb)),
+        artifacts=arts, verification={k: v.get(k) for k in (
+            "g_blocks", "dfam_exported", "P04_closure", "mdot_out", "dims",
+            "record", "raw_pf", "arch")}, g=v.get("g"), raw_pf=v.get("raw_pf"),
+        failures=list(v["failures"]))
+    causes = list(v["failures"])
+    if diff:
+        causes.append(f"spec distinto de la receta: {diff}")
+    if run.get("rc") not in (0, 3):
+        causes.append(f"rc {run.get('rc')} de la CLI")
+    elif run.get("rc") == 3 and v["ok"]:
+        causes.append("la CLI declaró infactible (rc 3) y la verificación "
+                      "no: discrepancia")
+    if causes:
+        cell["cause"] = "; ".join(causes)
+    else:
+        cell["status"] = "accepted"
+    return cell
+
+
+def _changed_since(sha: str) -> list[str]:
+    """Rutas que difieren entre `sha` y el árbol de trabajo (sin contar la
+    propia evidencia de aceptación)."""
+    out = _git(CB_ROOT, "diff", "--name-only", sha, "--").splitlines()
+    out += [ln[3:].strip() for ln in
+            _git(CB_ROOT, "status", "--porcelain").splitlines() if ln.strip()]
+    return sorted({p for p in out if p and p != EVIDENCE_REL})
+
+
+def source_identity() -> dict:
+    """Fuente confirmada para la corrida: árbol limpio salvo la evidencia."""
+    st = git_state(CB_ROOT)
+    dirty = [ln for ln in _git(CB_ROOT, "status", "--porcelain").splitlines()
+             if ln.strip() and ln[3:].strip() != EVIDENCE_REL]
+    if dirty:
+        raise ScaleError("árbol de Phy-CB con cambios sin confirmar: "
+                         f"{dirty[:5]} — confirme la fuente antes de aceptar")
+    return dict(model_source_sha=st["head"], branch=st["branch"])
+
+
+def load_acceptance(path: Path = ACCEPTANCE_PATH) -> dict:
+    if not Path(path).exists():
+        return dict(schema=ACCEPT_SCHEMA, cells={}, attempts=[], masses={})
+    return json.loads(Path(path).read_text(encoding="utf-8"))
+
+
+def save_acceptance(doc: dict, path: Path = ACCEPTANCE_PATH) -> None:
+    import physics_core as pc
+    doc.update(schema=ACCEPT_SCHEMA, recipe=ACCEPT_RECIPE,
+               stages=list(ACCEPT_STAGES), timeout_s=ACCEPT_TIMEOUT_S,
+               policy_rev=pc.SCALE_POLICY_REV)
+    text = json.dumps(doc, indent=1, ensure_ascii=False, sort_keys=True,
+                      allow_nan=False)
+    Path(path).write_text(text + "\n", encoding="utf-8", newline="\n")
+
+
+def _pair_comparison(cells: list[dict]) -> dict:
+    """Comparación D-377 a igualdad de condiciones. En L0 `annular` y
+    `reverse_annular` comparten la física (sólo el generador las distingue):
+    se declara si los g físicos coinciden en vez de inventar diferencias."""
+    rows = {}
+    for c in cells:
+        rec = c["verification"]["record"]
+        g = c["g"]
+        rows[c["arch"]] = dict(
+            dp_over_p=rec["dp_over_p"], D_casing_mm=rec["D_casing_mm"],
+            L_tot_mm=rec["L_tot_mm"], T04_K=rec["T04_K"], P04_Pa=rec["P04_Pa"],
+            mdot_out_kgs=c["verification"]["mdot_out"]["mdot_out_kgs"],
+            eta_comb=rec["eta_comb"], PF=rec["PF"], tau_ms=rec["tau_ms"],
+            g_max=max(g), g_min_margin_name=_g_names(_import_cb()[3])[
+                int(np.argmax(g))],
+            elapsed_s=c["run"]["elapsed_s"],
+            n_evals=c["selection"]["n_evals"])
+    a, b = (cells[0], cells[1])
+    same_aero = a["g"][:12] == b["g"][:12]
+    same_theta = a["theta"][1:] == b["theta"][1:]
+    return dict(rows=rows, same_aero_g=same_aero, same_theta_except_arch=same_theta,
+                note=("En L0 ambas anulares usan la misma física: los g "
+                      "aerodinámicos y el θ salvo la gate coinciden; sólo "
+                      "el contrato y el generador las distinguen (D-377).")
+                if same_aero else "Los g aerodinámicos difieren.")
+
+
+def cmd_accept(args) -> int:
+    key = str(args.mass)
+    if key not in MASS_KEYS:
+        raise ScaleError(f"caudal {key} fuera de la matriz {MASS_KEYS}")
+    pc = _import_cb()[0]
+    inlets = load_inlets()
+    row = inlets["inlets"].get(key)
+    if row is None:
+        raise ScaleError(f"no hay descarga congelada para {key} kg/s")
+    check_row(key, row)
+    doc = load_acceptance()
+    prev = doc.get("masses", {}).get(key)
+    if prev and prev.get("status") == "accepted" and not args.force:
+        changed = _changed_since(prev["model_source_sha"])
+        if changed:
+            raise ScaleError(f"la fuente cambió desde la aceptación de {key} "
+                             f"({changed[:5]}): use --force para rehacerla")
+        print(f"[accept {key}] ya aceptado sobre {prev['model_source_sha']}; "
+              "se verifica sin relanzar ni sobrescribir")
+        return _verify_masses(doc, [key])
+    ident = source_identity()
+    if args.out_root is None:
+        raise ScaleError("accept necesita --out-root para lanzar la CLI")
+    root = Path(args.out_root) / f"accept-{key}-{uuid.uuid4().hex[:8]}"
+    root.mkdir(parents=True, exist_ok=False)
+    accepted = None
+    for stage in ACCEPT_STAGES:
+        cells = []
+        for arch in ACCEPT_ARCHS:
+            outdir = root / f"s{stage['stage']}-{arch}"
+            run = _run_cell_process(_accept_argv(row, arch, stage, outdir),
+                                    root / f"s{stage['stage']}-{arch}.log")
+            cell = assess_cell(key, arch, stage, outdir, run, row)
+            cell.update(ident)
+            cell["policy_rev"] = pc.SCALE_POLICY_REV
+            cells.append(cell)
+            att = {k: v for k, v in cell.items() if k != "contract"}
+            att["contract_sha256"] = (cell.get("contract") or {}).get("sha256")
+            doc.setdefault("attempts", []).append(att)
+            print(f"[accept {key}] etapa {stage['stage']} {arch}: "
+                  f"{cell['status']} · {run['elapsed_s']} s"
+                  + (f" · {cell['cause']}" if cell["cause"] else ""))
+        if all(c["status"] == "accepted" for c in cells):
+            accepted = (stage, cells)
+            break
+    if accepted is None:
+        doc.setdefault("masses", {})[key] = dict(
+            status="blocked", model_source_sha=ident["model_source_sha"],
+            finished_utc=_now(),
+            cause="ninguna etapa dio las dos arquitecturas aceptadas")
+        save_acceptance(doc)
+        print(f"[accept {key}] BLOQUEADO · evidencia en {ACCEPTANCE_PATH}")
+        return 1
+    stage, cells = accepted
+    for c in cells:
+        doc.setdefault("cells", {})[c["key"]] = c
+    doc.setdefault("masses", {})[key] = dict(
+        status="accepted", stage=stage["stage"],
+        model_source_sha=ident["model_source_sha"], finished_utc=_now(),
+        inlets_sha256=sha256_bytes(INLETS_PATH.read_bytes()
+                                   .replace(b"\r\n", b"\n")),
+        comparison=_pair_comparison(cells))
+    save_acceptance(doc)
+    print(f"[accept {key}] ACEPTADO en la etapa {stage['stage']} · "
+          f"{ACCEPTANCE_PATH}")
+    return 0
+
+
+def _verify_masses(doc: dict, masses: list[str]) -> int:
+    ok = True
+    inlets = load_inlets()["inlets"]
+    for key in masses:
+        m = (doc.get("masses") or {}).get(key)
+        if not m or m.get("status") != "accepted":
+            print(f"[verify {key}] sin aceptación")
+            ok = False
+            continue
+        cells = [(doc.get("cells") or {}).get(f"{key}/{a}")
+                 for a in ACCEPT_ARCHS]
+        if any(c is None or c.get("status") != "accepted" for c in cells):
+            print(f"[verify {key}] faltan celdas aceptadas")
+            ok = False
+            continue
+        same = {(c["stage"], json.dumps(c["budget"], sort_keys=True),
+                 c["inlet"]["contract_sha256"], c["model_source_sha"])
+                for c in cells}
+        if len(same) != 1:
+            print(f"[verify {key}] las dos celdas no comparten etapa, receta, "
+                  "descarga y fuente")
+            ok = False
+        if cells[0]["inlet"]["contract_sha256"] != \
+                inlets[key]["contract"]["sha256"]:
+            print(f"[verify {key}] la descarga no es la congelada")
+            ok = False
+        changed = _changed_since(cells[0]["model_source_sha"])
+        if changed:
+            print(f"[verify {key}] la fuente cambió desde "
+                  f"{cells[0]['model_source_sha']}: {changed[:5]}")
+            ok = False
+        for c in cells:
+            raw = decode_bytes(c["contract"]["data"])
+            v = verify_scale_candidate(
+                c["theta"], c["spec"], raw,
+                expect=dict(arch=c["arch"], P03_Pa=c["inlet"]["P03_Pa"],
+                            T03_K=c["inlet"]["T03_K"],
+                            mdot_kg_s=c["inlet"]["mdot_kg_s"]),
+                contract_sha256=c["contract"]["sha256"])
+            same_g = v.get("g") == c["g"] and v.get("raw_pf") == c["raw_pf"]
+            print(f"[verify {c['key']}] {'OK' if v['ok'] and same_g else 'FALLO'}"
+                  f" · g máx {max(v.get('g') or [float('nan')]):+.4f}"
+                  f" · PF crudo {v.get('raw_pf')}"
+                  + ("" if v["ok"] else f" · {v['failures']}")
+                  + ("" if same_g else " · g o PF distintos de los guardados"))
+            ok = ok and v["ok"] and same_g
+    return 0 if ok else 1
+
+
+def cmd_verify(args) -> int:
+    masses = [m.strip() for m in str(args.masses).split(",") if m.strip()]
+    return _verify_masses(load_acceptance(), masses)
+
+
+def cmd_verify_candidate(args) -> int:
+    path = Path(args.candidate)
+    cand = json.loads(path.read_text(encoding="utf-8"))
+    if cand.get("contract_path"):
+        cp = Path(cand["contract_path"])
+        raw = (cp if cp.is_absolute() else path.parent / cp).read_bytes()
+    elif isinstance(cand.get("contract"), dict):
+        raw = json.dumps(cand["contract"], ensure_ascii=False,
+                         allow_nan=False).encode("utf-8")
+    else:
+        raw = None
+    v = verify_scale_candidate(cand.get("theta"), cand.get("spec") or {},
+                               raw, expect=cand.get("expect"),
+                               contract_sha256=cand.get("contract_sha256"))
+    print(json.dumps(dict(ok=v["ok"], failures=v["failures"],
+                          raw_pf=v.get("raw_pf"),
+                          contract_sha256=v.get("contract_sha256"),
+                          g_max=max(v["g"]) if v.get("g") else None),
+                     indent=1, ensure_ascii=False))
+    return 0 if v["ok"] else 1
+
+
+def cmd_verify_handoff_2(args) -> int:
+    f = parse_summary_fields(Path(args.summary).read_text(encoding="utf-8"),
+                             SUMMARY_FIELDS_2)
+    for k in ("model_source_sha", "pilot_evidence_commit"):
+        if not re.fullmatch(r"[0-9a-f]{40}", f[k]):
+            raise ScaleError(f"{k} debe ser un SHA de commit completo en "
+                             "minúsculas")
+        try:
+            _git(CB_ROOT, "cat-file", "-e", f[k] + "^{commit}")
+        except ScaleError:
+            raise ScaleError(f"{k} no existe en el checkout de Phy-CB")
+    if not re.fullmatch(r"[0-9a-f]{64}", f["pilot_evidence_sha256"]):
+        raise ScaleError("pilot_evidence_sha256 debe ser un SHA256")
+    if f["pilot_acceptance_count"] != "2":
+        raise ScaleError("pilot_acceptance_count distinto de 2")
+    src, ev = f["model_source_sha"], f["pilot_evidence_commit"]
+    anc = subprocess.run(["git", "-C", str(CB_ROOT), "merge-base",
+                          "--is-ancestor", src, ev], timeout=60)
+    if anc.returncode != 0:
+        raise ScaleError("model_source_sha no es antecesor de la evidencia")
+    changed = [p for p in _git(CB_ROOT, "diff", "--name-only", src, ev,
+                               "--").splitlines() if p and p != EVIDENCE_REL]
+    if changed:
+        raise ScaleError(f"el commit de evidencia cambia fuente: {changed}")
+
+    def _show(rev: str, rel: str) -> bytes:
+        p = subprocess.run(["git", "-C", str(CB_ROOT), "show",
+                            f"{rev}:{rel}"], capture_output=True, timeout=60)
+        if p.returncode != 0:
+            raise ScaleError(f"{rel} no está en {rev}")
+        return p.stdout
+
+    blob = _show(ev, EVIDENCE_REL)
+    if sha256_bytes(blob) != f["pilot_evidence_sha256"]:
+        raise ScaleError("pilot_evidence_sha256 no coincide con la evidencia "
+                         "del commit")
+    doc = _strict_json(blob)
+    inl = _strict_json(_show(src, "validation/scale_inlets.json"))
+    row8 = inl["inlets"]["8"]
+    cells = [c for c in (doc.get("cells") or {}).values()
+             if c.get("mass") == "8" and c.get("status") == "accepted"]
+    archs = sorted(c["arch"] for c in cells)
+    if archs != sorted(ACCEPT_ARCHS) or len(cells) != 2:
+        raise ScaleError(f"se exigen dos celdas distintas de 8 kg/s; hay "
+                         f"{archs}")
+    for c in cells:
+        if c.get("model_source_sha") != src:
+            raise ScaleError(f"{c['key']} no se ejecutó sobre "
+                             "model_source_sha")
+        if c["inlet"]["contract_sha256"] != row8["contract"]["sha256"]:
+            raise ScaleError(f"{c['key']} no parte de la descarga congelada")
+        raw = decode_bytes(c["contract"]["data"])
+        if sha256_bytes(raw) != c["contract"]["sha256"]:
+            raise ScaleError(f"{c['key']}: bytes de contrato alterados")
+    if len({c["stage"] for c in cells}) != 1:
+        raise ScaleError("las dos celdas no comparten etapa")
+    print(f"[verify-handoff 2] OK · fuente {src} · evidencia {ev} · "
+          f"2 celdas de 8 kg/s (etapa {cells[0]['stage']})")
+    return 0
+
+
 # ---------------------------------------------------------------------- CLI
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="scale_l0.py", description=__doc__,
@@ -1085,6 +1900,14 @@ def build_parser() -> argparse.ArgumentParser:
     h.add_argument("--wave", type=int, required=True)
     h.add_argument("--summary", required=True)
     sub.add_parser("check-inlets")
+    ac = sub.add_parser("accept")
+    ac.add_argument("--mass", required=True)
+    ac.add_argument("--out-root", default=None)
+    ac.add_argument("--force", action="store_true")
+    vf = sub.add_parser("verify")
+    vf.add_argument("--masses", required=True)
+    vc = sub.add_parser("verify-candidate")
+    vc.add_argument("--candidate", required=True)
     r = sub.add_parser("_ac-reeval")
     r.add_argument("--request", required=True)
     r.add_argument("--response", required=True)
@@ -1095,7 +1918,9 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     fn = {"acquire": cmd_acquire, "archive-uat14": cmd_archive_uat14,
           "diagnose": cmd_diagnose, "verify-handoff": cmd_verify_handoff,
-          "check-inlets": cmd_check_inlets, "_ac-reeval": _ac_reeval_main}
+          "check-inlets": cmd_check_inlets, "_ac-reeval": _ac_reeval_main,
+          "accept": cmd_accept, "verify": cmd_verify,
+          "verify-candidate": cmd_verify_candidate}
     if args.cmd == "acquire" and args.out_root is None:
         doc = load_inlets()
         key = str(args.mass)

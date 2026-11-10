@@ -1390,6 +1390,33 @@ def cfd_boundary_conditions(theta, record: dict) -> dict:
                "ℓ = 0.07·D_h con D_h del anillo de refrigeración"])
 
 
+def _source_flow(record, key: str):
+    """Operando de caudal FUENTE del record: número real (no bool ni texto),
+    finito y no negativo; si no, None. Un cero explícito es válido."""
+    if not isinstance(record, dict) or key not in record:
+        return None
+    v = record[key]
+    if isinstance(v, (bool, np.bool_)) or not isinstance(
+            v, (int, float, np.integer, np.floating)):
+        return None
+    v = float(v)
+    return v if (math.isfinite(v) and v >= 0.0) else None
+
+
+def mdot_out_kgs(record):
+    """`derived.mdot_out_kgs` (A7, D-381): ṁ_aire + ṁ_combustible del
+    record, sumados con los valores fuente y redondeados a 9 decimales
+    después de sumar. `None` (null en el JSON) si falta o es inválido
+    cualquiera de los dos o si la suma desborda. No usa el respaldo de
+    `cfd_boundary_conditions`."""
+    a = _source_flow(record, "mdot_air_kgs")
+    f = _source_flow(record, "mdot_fuel_kgs")
+    if a is None or f is None:
+        return None
+    s = a + f
+    return float(round(s, 9)) if math.isfinite(s) else None
+
+
 # ==========================================================================
 # 7. Contrato `phycb-combustor-1`
 # ==========================================================================
@@ -1446,9 +1473,18 @@ def build_contract(theta, record: dict, structural: dict | None = None,
     n_bolt = int(min(max(round(2.0 * math.pi * r_bolt / BOLT_SPACING_MM),
                          BOLT_COUNT_MIN), BOLT_COUNT_MAX))
 
+    warns = _rget(record, "operating_warnings", [])
     contract = dict(
         schema=SCHEMA,
         arch=gates["arch"],
+        # Claves ADITIVAS de la política de caudal (fase 17.1-02, D-373):
+        # clase efectiva, revisión de la política, límite de τ aplicado y
+        # avisos de dominio. El esquema y las claves previas no cambian.
+        operating_class=str(_rget(record, "operating_class", "none")),
+        scale_policy_revision=_rget(record, "scale_policy_rev"),
+        tau_max_ms=_rnum(record, "tau_max_ms_applied"),
+        operating_warnings=([str(x) for x in warns]
+                            if isinstance(warns, list) else []),
         _conventions=" ".join(CONVENTIONS[k] for k in
                               ("axis", "units", "flow", "liner_profile",
                                "casing_profile", "hole_angle_deg",
@@ -1473,6 +1509,9 @@ def build_contract(theta, record: dict, structural: dict | None = None,
             M_exit=_r(_rnum(record, "M_exit", 0.0), 6),
             mdot_air_kgs=_r(_rnum(record, "mdot_air_kgs", 0.0), 9),
             mdot_fuel_kgs=_r(_rnum(record, "mdot_fuel_kgs", 0.0), 9),
+            # A7 (D-381): aire + combustible FUENTE, sumados antes de
+            # redondear; null si falta o es inválido cualquier operando.
+            mdot_out_kgs=mdot_out_kgs(record),
             A_ref_mm2=_r(dm["A_ref_mm2"]), A_L_mm2=_r(dm["A_L_mm2"]),
             A_pass_mm2=_r(dm["A_pass_mm2"]),
             A_pass_min_mm2=_r(geo["A_pass_min_mm2"]),
