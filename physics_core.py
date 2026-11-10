@@ -855,7 +855,12 @@ TAU_MAX_MS = 10.0          # τ máximo ✅ (class_table `tau_ms`, clases 0–2)
 SCALE_MDOT_MIN_KGS = 5.0
 SCALE_MDOT_MAX_KGS = 25.0
 SCALE_ARCHS = ("annular", "reverse_annular")
-SCALE_POLICY_REV = "phycb-scale/1 (17.1-01, D-388)"
+#: Revisión de la política de clase. La /1 (17.1-01) fijó la física D-388;
+#: la /2 (17.1-02) añade el dominio de operación de D-373–D-376 (tope de
+#: 25 kg/s, T04 ≤ 1250 K y sólo anulares en 5–25). Viaja en el record, el
+#: contrato y los checkpoints de escala: un checkpoint de otra revisión no
+#: puede mezclar sus g con los de la vigente.
+SCALE_POLICY_REV = "phycb-scale/2 (17.1-02, D-373..D-376; física D-388)"
 SCALE_TAU_MIN_MS = 5.0     # class_table `tau_ms` clases 1–2 (5–10 ms)
 SCALE_TAU_MAX_MS = 10.0    # class_table `tau_ms` clases 0–2 (máx. 10 ms)
 SCALE_LENGTH_FACTOR = 1.0  # D_T / h_L. 1 = altura de la corona (Lefebvre);
@@ -888,6 +893,166 @@ def tau_limits_ms(cls: str) -> tuple[float, float]:
     if cls == "scale":
         return SCALE_TAU_MIN_MS, SCALE_TAU_MAX_MS
     return TAU_MIN_MS, TAU_MAX_MS
+
+
+# --- Política de caudal efectiva (fase 17.1-02, D-373–D-376) --------------
+#
+#  Una sola función decide, a partir del caudal EFECTIVO (el que llega al
+#  modelo tras todas las sustituciones de la CLI, del spec o de Studio), la
+#  clase de operación, el límite de τ, las arquitecturas admitidas y los
+#  avisos. La comparten `evaluate` (θ directo), `DesignSpec` y la CLI.
+#
+#  * 0,05 ≤ ṁ ≤ 1,5 kg/s: clase micro documentada (KJ66), sin cambios.
+#  * 0 < ṁ < 0,05 y 1,5 < ṁ < 5: física histórica con aviso de caudal fuera
+#    de la banda documentada (D-374).
+#  * 5 ≤ ṁ ≤ 25 (extremos incluidos): clase `annular_5_25`; sólo `annular`
+#    y `reverse_annular` (D-376) y T04 ≤ 1250 K (D-379).
+#  * ṁ > 25: error de caudal con el tope de 25 kg/s (D-374).
+#  * Las fidelidades > L0 se aceptan en la clase nueva como EXPLORATORIAS,
+#    con aviso (D-375); la aceptación de la clase es sólo L0.
+MICRO_MDOT_MIN_KGS = 0.05     # banda micro documentada (class_table clases 0–2)
+MICRO_MDOT_MAX_KGS = 1.5
+SCALE_T4_MAX_K = 1250.0       # tope de T04 de la clase de escala (D-379)
+OPERATING_CLASS_SCALE = "annular_5_25"
+
+
+class OperatingDomainError(ValueError):
+    """Punto de operación fuera del dominio de la política de caudal.
+
+    `field`, `rule` y `message` son estables (los consumen la CLI, Studio y
+    las pruebas); `str(err)` es el mensaje."""
+
+    def __init__(self, field: str, rule: str, message: str):
+        super().__init__(message)
+        self.field = field
+        self.rule = rule
+        self.message = message
+
+    def as_dict(self) -> dict:
+        return dict(field=self.field, rule=self.rule, message=self.message)
+
+
+def _finite_positive(value, field: str) -> float:
+    msg = f"{field} debe ser un número finito y positivo (llegó {value!r})"
+    if isinstance(value, bool) or value is None:
+        raise OperatingDomainError(field, "finite_positive", msg)
+    try:
+        v = float(value)
+    except (TypeError, ValueError):
+        raise OperatingDomainError(field, "finite_positive", msg)
+    if not (math.isfinite(v) and v > 0.0):
+        raise OperatingDomainError(field, "finite_positive", msg)
+    return v
+
+
+def resolve_operating_class(mdot_kgs, T4_K, arch=None, *,
+                            fidelity=Fidelity.L0) -> dict:
+    """Clase de operación efectiva para (ṁ, T04, arquitectura, fidelidad).
+
+    Devuelve `{class_id, physics_class, mdot_kgs, T4_K, arch, archs,
+    tau_min_ms, tau_max_ms, T4_max_K, policy_rev, fidelity_requested,
+    exploratory, warnings}`. Lanza `OperatingDomainError` si el punto no es
+    admisible. `arch=None` significa arquitectura automática. Los chequeos
+    físicos de P03, T03 y aporte térmico siguen en
+    `_validate_operating_point`."""
+    m = _finite_positive(mdot_kgs, "mdot_kgs")
+    t4 = None if T4_K is None else _finite_positive(T4_K, "T4_K")
+    if arch is not None and arch not in ARCH_NAMES:
+        raise OperatingDomainError(
+            "arch", "unknown",
+            f"arquitectura '{arch}' no existe — disponibles: "
+            f"{', '.join(ARCH_NAMES)}")
+    try:
+        fid = Fidelity(int(fidelity))
+    except (TypeError, ValueError):
+        raise OperatingDomainError("fidelity", "unknown",
+                                   f"fidelidad {fidelity!r} no existe")
+    if m > SCALE_MDOT_MAX_KGS:
+        raise OperatingDomainError(
+            "mdot_kgs", "max_25",
+            f"caudal de aire {m:g} kg/s fuera del dominio de Phy-CB: el "
+            f"tope admitido es {SCALE_MDOT_MAX_KGS:g} kg/s (D-374); pida un "
+            f"caudal ≤ {SCALE_MDOT_MAX_KGS:g} kg/s")
+    warn: list[str] = []
+    if SCALE_MDOT_MIN_KGS <= m <= SCALE_MDOT_MAX_KGS:
+        if arch == "can":
+            raise OperatingDomainError(
+                "arch", "annular_only",
+                f"a {m:g} kg/s (clase {OPERATING_CLASS_SCALE}, 5–25 kg/s) "
+                "la arquitectura 'can' no es admisible: elija una "
+                "arquitectura anular ('annular' o 'reverse_annular') u "
+                "omítala para explorar ambas (D-376)")
+        if t4 is not None and t4 > SCALE_T4_MAX_K:
+            raise OperatingDomainError(
+                "T4_K", "max_1250",
+                f"T04 = {t4:g} K supera el tope de {SCALE_T4_MAX_K:g} K de "
+                f"la clase {OPERATING_CLASS_SCALE} (D-379)")
+        class_id, physics = OPERATING_CLASS_SCALE, "scale"
+        archs = SCALE_ARCHS if arch is None else (arch,)
+        t4max = SCALE_T4_MAX_K
+        exploratory = int(fid) > int(Fidelity.L0)
+        if exploratory:
+            warn.append(
+                f"fidelidad {fid.name} solicitada en la clase "
+                f"{OPERATING_CLASS_SCALE}: uso EXPLORATORIO, su validación "
+                "a 5–25 kg/s está pendiente; la aceptación de la clase es "
+                "sólo L0 (D-375)")
+    else:
+        exploratory = False
+        archs = ARCH_NAMES if arch is None else (arch,)
+        physics, t4max = "micro", None
+        if MICRO_MDOT_MIN_KGS <= m <= MICRO_MDOT_MAX_KGS:
+            class_id = "micro"
+        elif m < MICRO_MDOT_MIN_KGS:
+            class_id = "micro_below_band"
+            warn.append(
+                f"caudal {m:g} kg/s por debajo de la banda documentada "
+                f"{MICRO_MDOT_MIN_KGS:g}–{MICRO_MDOT_MAX_KGS:g} kg/s: se usa "
+                "el modelo micro histórico sin validación (D-374)")
+        else:
+            class_id = "gap_1p5_5"
+            warn.append(
+                f"caudal {m:g} kg/s fuera de la banda documentada (micro "
+                f"{MICRO_MDOT_MIN_KGS:g}–{MICRO_MDOT_MAX_KGS:g} kg/s, escala "
+                f"{SCALE_MDOT_MIN_KGS:g}–{SCALE_MDOT_MAX_KGS:g} kg/s): se usa "
+                "el modelo micro histórico sin validación (D-374)")
+    tmin, tmax = tau_limits_ms(physics)
+    return dict(class_id=class_id, physics_class=physics, mdot_kgs=m,
+                T4_K=t4, arch=arch, archs=tuple(archs), tau_min_ms=tmin,
+                tau_max_ms=tmax, T4_max_K=t4max,
+                policy_rev=(SCALE_POLICY_REV if physics == "scale" else None),
+                fidelity_requested=fid.name, exploratory=exploratory,
+                warnings=warn)
+
+
+def fidelity_achieved(fidelity: int, source: str) -> tuple[str, str | None]:
+    """(fidelidad alcanzada, etiqueta de degradación o None) a partir de la
+    fidelidad solicitada y de la etiqueta `source` del contrato §3. Un aviso
+    de dominio NO es una degradación: viaja aparte, en `operating_warnings`."""
+    src = str(source or "")
+    if "(degenerate)" in src:
+        return "none", src
+    if "→" not in src:
+        if int(fidelity) == int(Fidelity.L0) or not src:
+            return Fidelity.L0.name, None
+        token = src
+    else:
+        token = src.rsplit("→", 1)[1].rstrip(")")
+    for tag, fid in (("L2B", Fidelity.L2B), ("L2A", Fidelity.L2A),
+                     ("L15", Fidelity.L15), ("L1", Fidelity.L1)):
+        if tag in token:
+            name = fid.name
+            break
+    else:
+        name = Fidelity.L0.name
+    return name, (src if "→" in src else None)
+
+
+def _fid_name(fidelity) -> str:
+    try:
+        return Fidelity(int(fidelity)).name
+    except (TypeError, ValueError):
+        return str(fidelity)
 
 
 M_EXIT_MAX = 0.30         # Mach de salida amigable a la turbina radial
@@ -3731,6 +3896,10 @@ def _degenerate_record(theta, source: str, reason: str,
         "LBO_margin_def": LBO_MARGIN_DEF,
         "I_band_MW_m3_atm": [0.0, 0.0],
         "g_soft": {k: G_DEGENERATE for k in SOFT_CONSTRAINT_NAMES},
+        "operating_class": "none", "operating_warnings": [],
+        "fidelity_requested": _fid_name(fidelity),
+        "fidelity_achieved": "none",
+        "fidelity_degradation": None,
     }
     try:
         t = pad_theta(theta)
@@ -3916,16 +4085,30 @@ def _evaluate_inner(theta, fidelity, use_cache, calibrate,
                                   f"{type(exc).__name__}: {exc}")
 
     fid = int(fidelity)
+    # Validación del punto y de la arquitectura decodificada ANTES de mirar
+    # la caché: un θ fuera de dominio nunca recupera un record guardado.
+    gates = decode_gates(theta)          # gates ANTES de cualquier float
+    reason = _validate_operating_point(theta)
+    op = None
+    if reason is None:
+        try:
+            op = resolve_operating_class(theta[IDX_MDOT_KGS], theta[IDX_T4_K],
+                                         gates["arch"], fidelity=fid)
+        except OperatingDomainError as exc:
+            reason = f"{exc.field}/{exc.rule}: {exc.message}"
+    if reason is not None:
+        rec = _degenerate_record(theta, "correlations_L0", reason, fid)
+        return CALIBRATION.apply(rec) if calibrate else rec
+
     extra = f"{dp_over_p_target}|{material}|{int(bool(use_cantera))}"
+    if op["physics_class"] == "scale":
+        # Sólo la escala puede devolver un resultado histórico de la caché
+        # en disco (record micro de antes de la política): se aísla por
+        # revisión. Las claves micro no cambian.
+        extra += f"|{op['policy_rev']}"
     key = _theta_key(theta, fid, extra)
     if use_cache and key in _CACHE:
         rec = dict(_CACHE[key])
-        return CALIBRATION.apply(rec) if calibrate else rec
-
-    gates = decode_gates(theta)          # gates ANTES de cualquier float
-    reason = _validate_operating_point(theta)
-    if reason is not None:
-        rec = _degenerate_record(theta, "correlations_L0", reason, fid)
         return CALIBRATION.apply(rec) if calibrate else rec
 
     dp_target = coeffs()["dp_over_p"] if dp_over_p_target is None \
@@ -3944,6 +4127,15 @@ def _evaluate_inner(theta, fidelity, use_cache, calibrate,
         rec = _try_l1(theta, rec, fid)
     if fid >= int(Fidelity.L15):
         rec = _try_higher(theta, rec, fid)
+
+    # Clase, avisos de dominio y etiquetas de fidelidad (D-373–D-375). Los
+    # avisos y la degradación viajan en claves SEPARADAS.
+    rec["operating_class"] = op["class_id"]
+    rec["operating_warnings"] = list(op["warnings"])
+    rec["fidelity_requested"] = _fid_name(fid)
+    ach, deg = fidelity_achieved(fid, rec.get("source", ""))
+    rec["fidelity_achieved"] = ach
+    rec["fidelity_degradation"] = deg
 
     if use_cache:
         _cache_store(key, rec)

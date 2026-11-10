@@ -578,7 +578,26 @@ def nominal_theta(spec: DesignSpec) -> np.ndarray:
     if split:                       # if the table is missing, keep the anchor
         theta[2], theta[3], theta[4] = split["pz"], split["sz"], split["dz"]
     theta[10] = NOMINAL_INJECTOR.get(spec.fuel, theta[10])
+    theta[pc.IDX_ARCH] = nominal_arch_id(spec, theta[pc.IDX_ARCH])
     return spec.fix_operating_point(theta)
+
+
+def nominal_arch_id(spec: DesignSpec, default_id: float) -> float:
+    """Architecture gate of the nominal design (phase 17.1-02, D-376).
+
+    With an automatic architecture in a restricted domain (5–25 kg/s: the
+    two annulars) the nominal path picks ONE annular deterministically —
+    the anchor's `reverse_annular` when it is admissible, otherwise the
+    first admitted id — and labels it; only the search explores both.
+    Elsewhere the anchor gate is kept (historical behaviour)."""
+    op = spec.operating
+    if op is None or spec.arch is not None or "arch" in spec.fixed_vars:
+        return float(default_id)
+    archs = tuple(op["archs"])
+    name = ARCH_NAMES[int(round(float(default_id)))]
+    if name in archs:
+        return float(default_id)
+    return float(ARCH_NAMES.index(archs[0]))
 
 
 # ==========================================================================
@@ -1635,9 +1654,17 @@ def emit_deliverables(args, spec, result, outdir, env, ckpt=None, logger=None,
                       f"{_f(rec, 'P04_Pa'):,.0f} Pa"),
         ("Bleed required",
          f"{100.0 * _f(rec, 'bleed_frac_required'):.2f} % of mdot3"),
-        ("Fidelity", ui.c(str(rec.get("source", "?")), "brand")),
+        ("Fidelity", ui.c(str(rec.get("source", "?")), "brand")
+                     + ui.c(f"   requested {rec.get('fidelity_requested', '?')}"
+                            f" · achieved {rec.get('fidelity_achieved', '?')}",
+                            "dim")),
+        ("Operating class",
+         f"{rec.get('operating_class', '?')}"
+         + ui.c(f"   tau <= {_f(rec, 'tau_max_ms_applied'):g} ms", "dim")),
         ("Status", status),
     ]
+    for w in rec.get("operating_warnings") or []:
+        print("  " + ui.warn(str(w)))
     if feasible_aero != feasible:
         rows.append(("Aero status (12)",
                      ui.c(" FEASIBLE ", "ok") if feasible_aero
@@ -1717,7 +1744,18 @@ def run_pareto_mode(args, env) -> int:
         print(f"  {i:>3} {feas_txt} {str(q.get('arch') or '?'):<18} "
               f"{q['eta_comb']:8.4f} {q['dp_over_p']:7.4f} {q['PF']:6.3f} "
               f"{q['T_wall_max_K']:8.1f} {q['EI_NOx']:7.2f}  "
-              f"{q.get('source', '')}")
+              f"{q.get('source', '')}"
+              + ("  [historical]" if q.get("checkpoint_identity")
+                 == "historical" else ""))
+    if any(q.get("checkpoint_identity") == "historical" for q in front):
+        #  A checkpoint of another scale-policy revision is shown for what
+        #  it is: its stored g are NOT candidates of the current revision.
+        print("  " + ui.warn("historical checkpoint (another scale-policy "
+                             "revision): its points keep their stored g and "
+                             "are not accepted candidates of "
+                             f"{pc.SCALE_POLICY_REV}; --pareto-pick "
+                             "re-evaluates the point under the current "
+                             "policy"))
     if args.pareto_pick is None:
         print(ui.c("\n  deliverables of one point:  --pareto-pick N "
                    "[--stl] [--sweep phi_pz]", "dim"))
@@ -1727,8 +1765,14 @@ def run_pareto_mode(args, env) -> int:
         print("  " + ui.err(f"--pareto-pick {n} out of range "
                             f"0..{len(front) - 1}"))
         return 2
-    result = evaluate_design(spec, np.array(front[n]["theta"]),
-                             fidelity=env["fidelity_requested"])
+    try:
+        if spec.operating is None:          # historical spec: re-validate
+            spec.resolve_operating_point(env["fidelity_requested"])
+        result = evaluate_design(spec, np.array(front[n]["theta"]),
+                                 fidelity=env["fidelity_requested"])
+    except ValueError as exc:
+        print("  " + ui.err(str(exc)))
+        return 2
     outdir = os.path.join(args.outdir, f"pareto_{n:02d}")
     os.makedirs(outdir, exist_ok=True)
     print()
@@ -2299,6 +2343,18 @@ def main(argv=None) -> int:
         print("  " + ui.err(str(exc)))
         return 2
     warn_fixed_out_of_bounds(spec)
+    # Flow-rate policy on the EFFECTIVE spec (phase 17.1-02, D-373–D-375):
+    # class, tau limit, admitted architectures and domain warnings. The
+    # exploratory warning follows the requested verification AND search
+    # rungs, without widening the offered fidelities or hiding degradation.
+    try:
+        op = spec.resolve_operating_point(
+            max(int(env["fidelity_requested"]), int(env["fidelity_search"])))
+    except ValueError as exc:
+        print("  " + ui.err(str(exc)))
+        return 2
+    for w in op["warnings"]:
+        print("  " + ui.warn(w))
 
     # The persistent cache ONLY receives fidelities >= L1 (contract §2).
     set_cache_path(os.environ.get("PHYCB_CACHE")
@@ -2332,8 +2388,16 @@ def main(argv=None) -> int:
         ("Fuel", ui.c(spec.fuel, "brand")),
         ("Max dp/p", f"{spec.dp_max:.3f}   (HARD cycle constraint)"),
         ("Max PF", f"{spec.PF_max:.2f}"),
-        ("Architecture", spec.arch or ui.c("free (design variable)",
-                                           "accent")),
+        ("Architecture", spec.arch or ui.c(
+            "free (design variable: " + ", ".join(op["archs"]) + ")",
+            "accent")),
+        ("Operating class", ui.c(op["class_id"], "brand")
+                            + ui.c(f"   tau {op['tau_min_ms']:g}-"
+                                   f"{op['tau_max_ms']:g} ms"
+                                   + (f" · T04 <= {op['T4_max_K']:g} K"
+                                      if op["T4_max_K"] else "")
+                                   + (f" · {op['policy_rev']}"
+                                      if op["policy_rev"] else ""), "dim")),
         ("Liner material", f"{spec.material}  ·  casing "
                            f"{spec.material_casing}"),
         ("DfAM", "5 LPBF constraints active" if spec.dfam
@@ -2472,8 +2536,19 @@ def main(argv=None) -> int:
     # (c) nominal design (WAVE1 §3) — the ~1 s path
     print(ui.rule("[2/4] Nominal sizing (layer 1, WAVE1 §3)", "brand"))
     theta = nominal_theta(spec)
-    result = evaluate_design(spec, theta,
-                             fidelity=env["fidelity_requested"])
+    if (spec.arch is None and "arch" not in spec.fixed_vars
+            and len(op["archs"]) < len(ARCH_NAMES)):
+        print("  " + ui.c(
+            "architecture (automatic, nominal): "
+            f"{pc.decode_gates(theta)['arch']} — deterministic choice "
+            f"among {', '.join(op['archs'])}; only --optimize explores "
+            "both", "accent"))
+    try:
+        result = evaluate_design(spec, theta,
+                                 fidelity=env["fidelity_requested"])
+    except ValueError as exc:
+        print("  " + ui.err(str(exc)))
+        return 2
     rec = result["record"]
     print("  " + ui.ok(f"record `{rec.get('schema')}` in "
                        f"{1000 * (time.time() - t_start):.0f} ms · "

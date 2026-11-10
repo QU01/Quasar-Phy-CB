@@ -45,6 +45,8 @@ from physics_core import (
     Fidelity, evaluate, evaluate_batch, physics_features,
     denormalize, normalize, VAR_NAMES, NDIM, NDIM_LEGACY, N_FEATURES,
     N_CONSTRAINTS, pad_theta, FUELS, ARCH_NAMES,
+    IDX_ARCH, BOUNDS_LO, BOUNDS_HI, decode_gates, resolve_operating_class,
+    OperatingDomainError, OPERATING_CLASS_SCALE, SCALE_POLICY_REV,
 )
 import structures_core
 
@@ -300,7 +302,7 @@ class DesignSpec:
                  T4_K=1150.0, fuel="jet_a", dp_max=0.04, arch=None,
                  material="Inconel-625", material_casing="Inconel-718",
                  PF_max=0.40, envelope_D_mm=None, envelope_L_mm=None,
-                 dfam=True, fixed_vars=None):
+                 dfam=True, fixed_vars=None, validate_domain=True):
         self.P3_Pa = float(P3_Pa)
         self.T3_K = float(T3_K)
         self.mdot_kgs = float(mdot_kgs)
@@ -338,12 +340,93 @@ class DesignSpec:
                     f"{', '.join(design_names)}")
         self._fixed_idx = [(VAR_NAMES.index(k), v)
                            for k, v in self.fixed_vars.items()]
+        # Política de caudal (fase 17.1-02, D-373–D-376): se resuelve UNA vez
+        # sobre el spec final, después de fixed_vars. `validate_domain=False`
+        # sólo lo usa la lectura de un checkpoint histórico para consulta.
+        self._op = None
+        self._arch_eff = None
+        self._arch_domain = tuple(ARCH_NAMES)
+        if validate_domain:
+            self.resolve_operating_point(Fidelity.L0)
 
-    def fix_operating_point(self, theta: np.ndarray) -> np.ndarray:
+    # ---- dominio de operación (D-373–D-376) ------------------------------
+    def _fixed_arch(self):
+        """Arquitectura que impone `fixed_vars["arch"]` (o None)."""
+        if "arch" not in self.fixed_vars:
+            return None
+        t = np.zeros(NDIM)
+        t[IDX_ARCH] = self.fixed_vars["arch"]
+        return decode_gates(t)["arch"]
+
+    def resolve_operating_point(self, fidelity=Fidelity.L0) -> dict:
+        """Clase, arquitecturas y avisos del spec EFECTIVO.
+
+        Usa la política única de `physics_core.resolve_operating_class`.
+        En la clase de escala, `can` (explícito o impuesto por `fixed_vars`)
+        y una arquitectura explícita que contradiga al fix se rechazan con
+        `OperatingDomainError`. En micro se conserva la semántica histórica:
+        el fix gana a `arch`. Lanza también por caudal o T04 inadmisibles."""
+        probe = resolve_operating_class(self.mdot_kgs, self.T4_K, None,
+                                        fidelity=fidelity)
+        fixed = self._fixed_arch()
+        if probe["physics_class"] == "scale":
+            if fixed == "can":
+                raise OperatingDomainError(
+                    "fixed_vars.arch", "annular_only",
+                    f"fix arch={self.fixed_vars['arch']:g} impone 'can', que "
+                    f"no es admisible a {self.mdot_kgs:g} kg/s (clase "
+                    f"{OPERATING_CLASS_SCALE}): elija una arquitectura anular "
+                    "('annular' o 'reverse_annular') (D-376)")
+            if (self.arch is not None and fixed is not None
+                    and self.arch != fixed):
+                raise OperatingDomainError(
+                    "arch", "fix_conflict",
+                    f"arquitectura explícita '{self.arch}' y fix arch="
+                    f"{self.fixed_vars['arch']:g} ('{fixed}') se contradicen "
+                    f"en la clase {OPERATING_CLASS_SCALE}: deje una sola "
+                    "arquitectura anular (D-376)")
+            eff = self.arch or fixed
+        else:
+            eff = fixed if fixed is not None else self.arch
+        op = resolve_operating_class(self.mdot_kgs, self.T4_K, eff,
+                                     fidelity=fidelity)
+        self._op = op
+        self._arch_eff = eff
+        self._arch_domain = tuple(op["archs"])
+        return op
+
+    @property
+    def operating(self) -> dict | None:
+        """Última resolución de la política (None si no se validó)."""
+        return self._op
+
+    def check_theta_domain(self, theta: np.ndarray) -> None:
+        """Rechaza un θ EXPLÍCITO cuya arquitectura no admite el dominio.
+        Nunca transforma la arquitectura de un θ provisto."""
+        if self._op is None:
+            return
+        arch = decode_gates(np.asarray(theta, dtype=float))["arch"]
+        if arch not in self._arch_domain:
+            raise OperatingDomainError(
+                "theta.arch", "annular_only",
+                f"el θ provisto trae arch='{arch}', que no es admisible en "
+                f"la clase {self._op['class_id']} (admitidas: "
+                f"{', '.join(self._arch_domain)}): elija una arquitectura "
+                "anular (D-376)")
+
+    def fix_operating_point(self, theta: np.ndarray,
+                            sampled: bool = False) -> np.ndarray:
         """Fija el punto de operación del spec, el combustible, la
         arquitectura (si el spec la impone) y las fixed_vars. TODA
         evaluación (LHS, NSGA-II, adquisición) pasa por aquí, así que fijar
-        una variable colapsa esa dimensión."""
+        una variable colapsa esa dimensión.
+
+        `sampled=True` (muestreo, NSGA-II y adquisición) con arquitectura
+        automática en un dominio restringido (clase 5–25: sólo anulares)
+        reparte la coordenada de la gate θ[0] POR PARTES IGUALES entre los
+        IDs admitidos: el muestreo nunca genera `can` y el LHS queda
+        equilibrado entre ambas anulares. Un θ explícito (`sampled=False`)
+        no se transforma: se valida con `check_theta_domain`."""
         theta = pad_theta(theta).copy()
         theta[16] = self.P3_Pa
         theta[17] = self.T3_K
@@ -354,6 +437,13 @@ class DesignSpec:
             theta[0] = float(ARCH_NAMES.index(self.arch))
         for idx, val in self._fixed_idx:
             theta[idx] = val
+        if (sampled and self._op is not None and self._arch_eff is None
+                and len(self._arch_domain) < len(ARCH_NAMES)):
+            ids = [ARCH_NAMES.index(a) for a in self._arch_domain]
+            u = (theta[IDX_ARCH] - BOUNDS_LO[IDX_ARCH]) / (
+                BOUNDS_HI[IDX_ARCH] - BOUNDS_LO[IDX_ARCH])
+            u = min(max(float(u), 0.0), 1.0) if np.isfinite(u) else 0.0
+            theta[IDX_ARCH] = float(ids[min(int(u * len(ids)), len(ids) - 1)])
         return theta
 
     # ---- objetivos (a MINIMIZAR) y restricciones (g<=0) sobre un record --
@@ -483,7 +573,8 @@ class NSGA2:
 
     # -- evaluación barata de una población (solo surrogate + L0 features) -
     def _eval_pop(self, U):
-        thetas = np.array([self.spec.fix_operating_point(denormalize(u))
+        thetas = np.array([self.spec.fix_operating_point(denormalize(u),
+                                                   sampled=True)
                            for u in U])
         recs0 = [evaluate(t, fidelity=Fidelity.L0, use_cache=False,
                           calibrate=False)
@@ -604,6 +695,53 @@ def select_acquisition_batch(result: dict, spec: DesignSpec,
 # ==========================================================================
 # 6. Orquestador: diseño inverso autónomo con active learning
 # ==========================================================================
+class CheckpointIncompatible(ValueError):
+    """Checkpoint que no puede reanudarse con la política vigente."""
+
+
+def _scale_checkpoint_problems(payload: dict, spec: DesignSpec,
+                               fidelity, check_fidelity: bool = True
+                               ) -> list[str]:
+    """Discrepancias de un checkpoint de escala con la política vigente:
+    revisión, clase, fidelidad y filas θ (longitud, finitud, punto de
+    operación, combustible y arquitectura del dominio). Lista vacía = OK."""
+    op = spec.operating
+    out: list[str] = []
+    rev = payload.get("scale_policy_revision")
+    if rev != SCALE_POLICY_REV:
+        out.append(f"revisión de política {rev!r} (vigente "
+                   f"{SCALE_POLICY_REV!r})")
+    if payload.get("operating_class") != op["class_id"]:
+        out.append(f"clase {payload.get('operating_class')!r} (vigente "
+                   f"{op['class_id']!r})")
+    if check_fidelity:
+        want = Fidelity(int(fidelity)).name
+        if payload.get("fidelity") != want:
+            out.append(f"fidelidad {payload.get('fidelity')!r} (solicitada "
+                       f"{want!r})")
+    op_vals = (spec.P3_Pa, spec.T3_K, spec.mdot_kgs, spec.T4_K)
+    fuel_id = float(list(FUELS).index(spec.fuel))
+    for i, row in enumerate(payload.get("dataset", [])):
+        th = row.get("theta") if isinstance(row, dict) else None
+        if (not isinstance(th, list) or len(th) not in (NDIM_LEGACY, NDIM)
+                or not all(isinstance(x, (int, float))
+                           and not isinstance(x, bool)
+                           and math.isfinite(float(x)) for x in th)):
+            out.append(f"fila θ {i} inválida")
+            break
+        t = pad_theta(np.asarray(th, dtype=float))
+        if tuple(float(x) for x in t[16:20]) != op_vals or t[15] != fuel_id:
+            out.append(f"fila θ {i}: punto de operación o combustible "
+                       "distinto del spec")
+            break
+        arch = decode_gates(t)["arch"]
+        if arch not in spec._arch_domain:
+            out.append(f"fila θ {i}: arquitectura '{arch}' fuera del dominio "
+                       f"{list(spec._arch_domain)}")
+            break
+    return out
+
+
 class AutonomousCombustorDesigner:
     def __init__(self, spec: DesignSpec, fidelity=Fidelity.L1,
                  n_workers=1, log=print, seed=SEED):
@@ -620,20 +758,55 @@ class AutonomousCombustorDesigner:
 
     @classmethod
     def load(cls, path: str, fidelity=Fidelity.L1, n_workers=1,
-             log=print, seed: int | None = None) -> "AutonomousCombustorDesigner":
+             log=print, seed: int | None = None,
+             purpose: str = "resume") -> "AutonomousCombustorDesigner":
         """Reconstruye un designer desde un checkpoint de save() (warm
         start). El dataset guardado solo trae theta + salidas; el record
         completo (splits, térmico, g_struct...) se reconstruye re-evaluando el
         L0 (~1 ms/punto) y se sobreescriben las salidas con las guardadas
         (que pueden ser L1/calibradas) — la verdad del flywheel se
-        conserva. `seed=None` continúa con la semilla del checkpoint."""
+        conserva. `seed=None` continúa con la semilla del checkpoint.
+
+        Fase 17.1-02: un checkpoint de la clase de escala sólo se reanuda si
+        su revisión de política, su clase, su fidelidad y TODAS sus filas θ
+        casan con el spec y la revisión vigentes; si no, se lanza
+        `CheckpointIncompatible` ANTES de restaurar ningún g. Con
+        `purpose="query"` (consulta del frente) un checkpoint histórico se
+        abre igualmente, pero cada record queda marcado con
+        `checkpoint_identity = "historical"` y su revisión: no es un
+        candidato aceptado con la revisión nueva. Los checkpoints micro se
+        leen como siempre."""
         with open(path, encoding="utf-8") as f:
             payload = json.load(f)
         spec_kw = {k: v for k, v in payload["spec"].items()
                    if not k.startswith("_")}
-        spec = DesignSpec(**spec_kw)
+        problems: list[str] = []
+        try:
+            spec = DesignSpec(**spec_kw)
+        except OperatingDomainError as exc:
+            if purpose != "query":
+                raise CheckpointIncompatible(
+                    f"checkpoint {path}: su spec queda fuera del dominio "
+                    f"vigente ({exc}) — empiece una búsqueda nueva sin "
+                    "--resume") from exc
+            spec = DesignSpec(**spec_kw, validate_domain=False)
+            problems.append(f"spec fuera del dominio vigente: {exc}")
+        if spec.operating is not None and \
+                spec.operating["physics_class"] == "scale":
+            problems += _scale_checkpoint_problems(
+                payload, spec, fidelity, check_fidelity=(purpose != "query"))
+        historical = bool(problems)
+        if historical and purpose != "query":
+            raise CheckpointIncompatible(
+                f"checkpoint {path} incompatible con la política de escala "
+                f"vigente ({SCALE_POLICY_REV}): " + "; ".join(problems[:6])
+                + " — empiece una búsqueda nueva sin --resume (sus g no se "
+                "mezclan con los de esta revisión)")
         d = cls(spec, fidelity=fidelity, n_workers=n_workers, log=log,
                 seed=payload.get("seed", SEED) if seed is None else seed)
+        d.checkpoint_revision = payload.get("scale_policy_revision")
+        d.checkpoint_identity = "historical" if historical else "current"
+        d.checkpoint_problems = problems
         n_legacy = sum(1 for row in payload.get("dataset", [])
                        if len(row["theta"]) == NDIM_LEGACY)
         if n_legacy:
@@ -649,6 +822,9 @@ class AutonomousCombustorDesigner:
                 rec["g"] = row["g"]
             if row.get("source"):
                 rec["source"] = row["source"]
+            if historical:
+                rec["checkpoint_identity"] = "historical"
+                rec["checkpoint_revision"] = d.checkpoint_revision
             rec["_theta"] = t.tolist()
             d.X.append(physics_features(t))
             d.recs.append(rec)
@@ -657,7 +833,8 @@ class AutonomousCombustorDesigner:
 
     # ---- evaluación física + registro ------------------------------------
     def _eval_and_store(self, thetas: np.ndarray) -> list[dict]:
-        thetas = np.array([self.spec.fix_operating_point(t) for t in thetas])
+        thetas = np.array([self.spec.fix_operating_point(t, sampled=True)
+                           for t in thetas])
         recs = evaluate_batch(thetas, fidelity=self.fidelity,
                               n_workers=self.n_workers)
         for t, r in zip(thetas, recs):
@@ -794,7 +971,9 @@ class AutonomousCombustorDesigner:
                             T_wall_max_K=r["T_wall_max_K"],
                             arch=r.get("arch"), injector=r.get("injector"),
                             feasible=bool(V[i] <= 1e-9),
-                            source=r.get("source", "")))
+                            source=r.get("source", ""),
+                            checkpoint_identity=r.get("checkpoint_identity",
+                                                      "current")))
         return out
 
     def save(self, path: str):
@@ -807,6 +986,16 @@ class AutonomousCombustorDesigner:
                           **{k: r[k] for k in OUT_KEYS},
                           g=r.get("g"), source=r.get("source"))
                      for r in self.recs])
+        op = self.spec.operating
+        if op is not None and op["physics_class"] == "scale":
+            # Sólo escala: revisión, clase, fidelidad y arquitectura por
+            # candidato. La forma de los checkpoints micro no cambia.
+            payload.update(scale_policy_revision=op["policy_rev"],
+                           operating_class=op["class_id"],
+                           fidelity=Fidelity(int(self.fidelity)).name,
+                           arch_domain=list(op["archs"]))
+            for row, r in zip(payload["dataset"], self.recs):
+                row["arch"] = r.get("arch")
         with open(path, "w") as f:
             json.dump(payload, f, indent=1)
 
@@ -856,7 +1045,13 @@ def evaluate_design(spec: DesignSpec, theta_design,
         raise ValueError(
             f"theta debe tener 16 variables de diseño o {NDIM} (θ completo) "
             f"— llegaron {n}")
+    # La política se re-resuelve sobre el spec FINAL (la CLI puede haber
+    # sustituido el punto de operación con el del θ) y el θ provisto se
+    # valida, sin transformar su arquitectura (D-373, D-376).
+    if spec.operating is not None:
+        spec.resolve_operating_point(fidelity)
     theta = spec.fix_operating_point(theta)
+    spec.check_theta_domain(theta)
     rec = evaluate(theta, fidelity=fidelity)
     rec["_theta"] = theta.tolist()
     fit = scalar_fitness(spec, rec, theta)
@@ -873,7 +1068,8 @@ def evaluate_design(spec: DesignSpec, theta_design,
 def pareto_from_checkpoint(path: str, log=lambda *a: None):
     """(spec, frente de Pareto verificado) desde un checkpoint de save().
     Cada punto trae su θ completo — apto para re-generar entregables."""
-    d = AutonomousCombustorDesigner.load(path, fidelity=Fidelity.L0, log=log)
+    d = AutonomousCombustorDesigner.load(path, fidelity=Fidelity.L0, log=log,
+                                         purpose="query")
     return d.spec, d._final_pareto()
 
 

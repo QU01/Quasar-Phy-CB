@@ -663,3 +663,426 @@ def test_lbo_kj66_anchor_and_degenerate_unchanged():
     assert rb["feasible"] is False
     assert "degenerate" in rb["source"]
     assert all(v == 10.0 for v in rb["g"])
+
+
+# =====================================================================
+# Política de caudal efectiva (fase 17.1-02, Tarea 1): D-373–D-376
+#
+# La misma política decide la clase en el spec, en la CLI y en la
+# evaluación directa de θ. Las pruebas `test_selection_*` recorren los
+# bordes, `test_architecture_*` el dominio anular, `test_fidelity_*` las
+# etiquetas de fidelidad (con un doble de solver) y `test_resume_*` los
+# checkpoints.
+# =====================================================================
+import phycb_cli as cli  # noqa: E402
+
+P3_8, T3_8 = 358961.8805265866, 432.4902351398321
+
+
+def _spec(m, T4=1200.0, **kw):
+    return no.DesignSpec(P3_Pa=P3_8, T3_K=T3_8, mdot_kgs=m, T4_K=T4, **kw)
+
+
+def _cli_spec(m, *extra, T4=1200.0):
+    argv = ["--p3", repr(P3_8), "--t3", repr(T3_8), "--mdot", repr(m),
+            "--t4", repr(T4), *extra]
+    return cli.build_spec(cli.parse_args(argv))[0]
+
+
+SCALE = pc.OPERATING_CLASS_SCALE
+SEL = [(0.05, "micro", 0), (1.5, "micro", 0), (1.5 + 1e-6, "gap_1p5_5", 1),
+       (5.0 - 1e-6, "gap_1p5_5", 1), (5.0, SCALE, 0), (5.0 + 1e-6, SCALE, 0),
+       (8.0, SCALE, 0), (25.0 - 1e-6, SCALE, 0), (25.0, SCALE, 0)]
+
+
+@pytest.mark.parametrize("m,cls,nwarn", SEL)
+def test_selection_spec_cli_and_theta_share_policy(m, cls, nwarn):
+    s = _spec(m)
+    c = _cli_spec(m)
+    for sp in (s, c):
+        op = sp.operating
+        assert op["class_id"] == cls
+        assert len(op["warnings"]) == nwarn
+    r = _eval(s.fix_operating_point(pc.THETA_REF))
+    assert r["operating_class"] == cls
+    assert r["operating_warnings"] == s.operating["warnings"]
+    assert r["combustor_class"] == ("scale" if cls == SCALE else "micro")
+    assert r["tau_max_ms_applied"] == s.operating["tau_max_ms"] == 10.0
+    if cls == SCALE:
+        assert r["scale_policy_rev"] == pc.SCALE_POLICY_REV
+        assert s.operating["archs"] == pc.SCALE_ARCHS
+        assert r["tau_min_ms_applied"] == pc.SCALE_TAU_MIN_MS
+    else:
+        assert r["scale_policy_rev"] is None
+        assert s.operating["archs"] == pc.ARCH_NAMES
+
+
+def test_selection_below_documented_band_warns_with_history():
+    op = pc.resolve_operating_class(0.03, 1150.0)
+    assert op["class_id"] == "micro_below_band" and len(op["warnings"]) == 1
+    assert op["physics_class"] == "micro"
+
+
+@pytest.mark.parametrize("m", [25.0 + 1e-6, 30.0])
+def test_selection_above_25_rejected_everywhere(m):
+    for build in (lambda: _spec(m), lambda: _cli_spec(m)):
+        with pytest.raises(pc.OperatingDomainError) as e:
+            build()
+        assert (e.value.field, e.value.rule) == ("mdot_kgs", "max_25")
+        assert "25 kg/s" in str(e.value)
+    th = pc.THETA_REF.copy()
+    th[pc.IDX_MDOT_KGS] = m
+    r = _eval(th)
+    assert r["feasible"] is False and "degenerate" in r["source"]
+    assert "max_25" in r["degenerate_reason"]
+    assert all(v == pc.G_DEGENERATE for v in r["g"])
+
+
+@pytest.mark.parametrize("bad,reason", [
+    (0.0, "mdot_kgs <= 0"), (-1.0, "mdot_kgs <= 0"),
+    (float("nan"), "theta con NaN/inf o longitud insuficiente"),
+    (float("inf"), "theta con NaN/inf o longitud insuficiente")])
+def test_selection_invalid_mass_spec_cli_and_degenerate_theta(bad, reason):
+    for build in (lambda: _spec(bad), lambda: _cli_spec(bad)):
+        with pytest.raises(pc.OperatingDomainError) as e:
+            build()
+        assert (e.value.field, e.value.rule) == ("mdot_kgs", "finite_positive")
+    th = pc.THETA_REF.copy()
+    th[pc.IDX_MDOT_KGS] = bad
+    r = _eval(th)
+    # forma histórica del degenerado: mismo motivo, g positivo e infactible
+    assert r["degenerate_reason"] == reason
+    assert r["g"] == [pc.G_DEGENERATE] * pc.N_CONSTRAINTS
+    assert r["feasible"] is False and r["operating_class"] == "none"
+
+
+@pytest.mark.parametrize("bad", [True, None, "texto", float("nan")])
+def test_selection_resolver_rejects_non_numeric(bad):
+    with pytest.raises(pc.OperatingDomainError) as e:
+        pc.resolve_operating_class(bad, 1200.0)
+    assert e.value.as_dict()["rule"] == "finite_positive"
+
+
+def test_selection_t4_cap_only_in_scale_class():
+    assert _spec(8.0, T4=1250.0).operating["T4_max_K"] == 1250.0
+    for build in (lambda: _spec(8.0, T4=1250.0 + 1e-6),
+                  lambda: _cli_spec(8.0, T4=1250.0 + 1e-6)):
+        with pytest.raises(pc.OperatingDomainError) as e:
+            build()
+        assert (e.value.field, e.value.rule) == ("T4_K", "max_1250")
+    th = _spec(8.0).fix_operating_point(pc.THETA_REF)
+    th[pc.IDX_T4_K] = 1250.0 + 1e-6
+    r = _eval(th)
+    assert "max_1250" in r["degenerate_reason"] and r["feasible"] is False
+    th[pc.IDX_T4_K] = 1250.0
+    assert "degenerate" not in _eval(th)["source"]
+    # la clase micro no tiene ese tope (comportamiento histórico)
+    assert no.DesignSpec(mdot_kgs=0.13, T4_K=1300.0).operating["T4_max_K"] \
+        is None
+
+
+def test_selection_kj66_micro_reverse_flow_unchanged():
+    r = _eval(pc.THETA_REF)
+    assert (r["arch"], r["operating_class"], r["combustor_class"]) == \
+        ("reverse_annular", "micro", "micro")
+    assert r["operating_warnings"] == [] and r["tau_max_ms_applied"] == 10.0
+    assert r["fidelity_requested"] == r["fidelity_achieved"] == "L0"
+    assert r["fidelity_degradation"] is None
+
+
+def test_selection_cli_main_reports_flow_cap(tmp_path, capsys):
+    rc = cli.main(["--mdot", "30", "--p3", repr(P3_8), "--t3", repr(T3_8),
+                   "--t4", "1200", "--no-figures", "--no-color",
+                   "--outdir", str(tmp_path / "o")])
+    assert rc == 2
+    assert "25 kg/s" in capsys.readouterr().out
+
+
+# ------------------------------------------------------------- architecture
+def test_architecture_can_explicit_rejected_at_scale():
+    for build in (lambda: _spec(8.0, arch="can"),
+                  lambda: _cli_spec(8.0, "--arch", "can")):
+        with pytest.raises(pc.OperatingDomainError) as e:
+            build()
+        assert e.value.rule == "annular_only" and "anular" in str(e.value)
+    assert _spec(0.13, arch="can").operating["archs"] == ("can",)
+
+
+@pytest.mark.parametrize("val", [0.0, 0.4, -3.0])
+def test_architecture_fix_can_rejected_at_scale(val):
+    with pytest.raises(pc.OperatingDomainError) as e:
+        _spec(8.0, fixed_vars={"arch": val})
+    assert (e.value.field, e.value.rule) == ("fixed_vars.arch", "annular_only")
+    with pytest.raises(pc.OperatingDomainError):
+        _cli_spec(8.0, "--fix", f"arch={val}")
+
+
+def test_architecture_explicit_vs_fix_conflict():
+    with pytest.raises(pc.OperatingDomainError) as e:
+        _spec(8.0, arch="annular", fixed_vars={"arch": 2.0})
+    assert e.value.rule == "fix_conflict"
+    ok = _spec(8.0, arch="annular", fixed_vars={"arch": 1.0})
+    assert ok.operating["archs"] == ("annular",)
+    fixed = _spec(8.0, fixed_vars={"arch": 2.0})
+    assert fixed.operating["archs"] == ("reverse_annular",)
+    # micro: semántica histórica, el fix gana a la arquitectura explícita
+    m = no.DesignSpec(arch="annular", fixed_vars={"arch": 2.0})
+    assert pc.decode_gates(m.fix_operating_point(pc.THETA_REF))["arch"] \
+        == "reverse_annular"
+
+
+def test_architecture_auto_domain_is_exactly_the_annulars():
+    assert _spec(8.0).operating["archs"] == ("annular", "reverse_annular")
+    assert _spec(8.0, arch="reverse_annular").operating["archs"] == \
+        ("reverse_annular",)
+    assert no.DesignSpec().operating["archs"] == pc.ARCH_NAMES
+
+
+def test_architecture_nominal_is_deterministic_and_labelled():
+    s = _spec(8.0)
+    a = cli.nominal_theta(s)
+    b = cli.nominal_theta(_spec(8.0))
+    assert np.array_equal(a, b)
+    assert pc.decode_gates(a)["arch"] in pc.SCALE_ARCHS
+    assert pc.decode_gates(cli.nominal_theta(_spec(8.0, arch="annular")))[
+        "arch"] == "annular"
+    # micro conserva la gate del ancla
+    assert cli.nominal_theta(no.DesignSpec())[pc.IDX_ARCH] == \
+        pc.THETA_REF[pc.IDX_ARCH]
+
+
+def test_architecture_explicit_theta_validated_not_transformed():
+    s = _spec(8.0)
+    th = pc.THETA_REF.copy()
+    th[pc.IDX_ARCH] = 0.0
+    assert s.fix_operating_point(th)[pc.IDX_ARCH] == 0.0     # sin transformar
+    with pytest.raises(pc.OperatingDomainError) as e:
+        no.evaluate_design(s, th)
+    assert e.value.field == "theta.arch"
+    th[pc.IDX_ARCH] = 1.0
+    out = no.evaluate_design(s, th)
+    assert out["record"]["arch"] == "annular"
+    assert out["record"]["operating_class"] == SCALE
+
+
+def test_architecture_cli_full_theta_overrides_and_validates(tmp_path, capsys):
+    th = _spec(8.0).fix_operating_point(pc.THETA_REF)
+    th[pc.IDX_ARCH] = 0.0
+    rc = cli.main(["--theta", ",".join(repr(float(x)) for x in th),
+                   "--no-figures", "--no-report", "--no-color",
+                   "--outdir", str(tmp_path / "o")])
+    assert rc == 2
+    assert "anular" in capsys.readouterr().out
+
+
+def test_architecture_sampling_is_balanced_and_in_domain():
+    U = no.AutonomousCombustorDesigner._lhs(40, pc.NDIM,
+                                            np.random.default_rng(71))
+    s = _spec(8.0)
+    archs = [pc.decode_gates(s.fix_operating_point(pc.denormalize(u),
+                                                   sampled=True))["arch"]
+             for u in U]
+    assert archs.count("annular") == archs.count("reverse_annular") == 20
+    micro = no.DesignSpec()
+    archs_m = {pc.decode_gates(micro.fix_operating_point(pc.denormalize(u),
+                                                         sampled=True))["arch"]
+               for u in U}
+    assert archs_m == set(pc.ARCH_NAMES)          # micro sin cambios
+    fixed = _spec(8.0, arch="annular")
+    assert {pc.decode_gates(fixed.fix_operating_point(pc.denormalize(u),
+                                                      sampled=True))["arch"]
+            for u in U} == {"annular"}
+
+
+class _StubSurrogate:
+    def predict(self, X):
+        n = len(X)
+        return (np.tile([0.99, 0.03, 0.2, 900.0, 5.0], (n, 1)),
+                np.full((n, 5), 1e-3))
+
+
+def test_architecture_search_and_acquisition_keep_domain():
+    s = _spec(8.0)
+    res = no.NSGA2(s, _StubSurrogate(), pop=12, generations=2, seed=71).run()
+    archs = {pc.decode_gates(t)["arch"] for t in res["thetas"]}
+    assert archs <= set(pc.SCALE_ARCHS)
+    U = no.select_acquisition_batch(res, s, batch_size=6, seed=71)
+    d = no.AutonomousCombustorDesigner(s, fidelity=pc.Fidelity.L0,
+                                       log=lambda *a: None)
+    recs = d._eval_and_store(np.array([pc.denormalize(u) for u in U]))
+    assert recs and all(r["arch"] in pc.SCALE_ARCHS for r in recs)
+    assert all(r["operating_class"] == SCALE for r in recs)
+
+
+def _mini(spec, n=6, fid=pc.Fidelity.L0):
+    d = no.AutonomousCombustorDesigner(spec, fidelity=fid,
+                                       log=lambda *a: None)
+    U = d._lhs(n, pc.NDIM, d.rng)
+    d._eval_and_store(np.array([pc.denormalize(u) for u in U]))
+    return d
+
+
+def test_architecture_candidates_labelled_in_checkpoint(tmp_path):
+    p = tmp_path / "ck.json"
+    _mini(_spec(8.0)).save(str(p))
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    assert payload["scale_policy_revision"] == pc.SCALE_POLICY_REV
+    assert payload["operating_class"] == SCALE
+    assert payload["fidelity"] == "L0"
+    assert payload["arch_domain"] == list(pc.SCALE_ARCHS)
+    assert {r["arch"] for r in payload["dataset"]} <= set(pc.SCALE_ARCHS)
+
+
+# ----------------------------------------------------------------- fidelity
+def _fake_l1(label):
+    def fake(theta, rec, fid):
+        rec["source"] = label
+        return rec
+    return fake
+
+
+def test_fidelity_exploratory_warning_and_achieved_label(monkeypatch):
+    monkeypatch.setattr(pc, "_try_l1", _fake_l1("crn_L1"))
+    th = _spec(8.0).fix_operating_point(pc.THETA_REF)
+    r = pc.evaluate(th, fidelity=pc.Fidelity.L1, use_cache=False,
+                    calibrate=False)
+    assert any("EXPLORATORIO" in w for w in r["operating_warnings"])
+    assert (r["fidelity_requested"], r["fidelity_achieved"],
+            r["fidelity_degradation"]) == ("L1", "L1", None)
+
+
+def test_fidelity_fallback_is_degradation_not_warning(monkeypatch):
+    label = "crn_L1(timeout→L0)"
+    monkeypatch.setattr(pc, "_try_l1", _fake_l1(label))
+    th = _spec(8.0).fix_operating_point(pc.THETA_REF)
+    r = pc.evaluate(th, fidelity=pc.Fidelity.L1, use_cache=False,
+                    calibrate=False)
+    assert (r["fidelity_achieved"], r["fidelity_degradation"]) == ("L0", label)
+    assert label not in " ".join(r["operating_warnings"])
+    assert len(r["operating_warnings"]) == 1          # sólo el exploratorio
+
+
+def test_fidelity_no_exploratory_warning_in_l0_or_micro(monkeypatch):
+    monkeypatch.setattr(pc, "_try_l1", _fake_l1("crn_L1"))
+    th8 = _spec(8.0).fix_operating_point(pc.THETA_REF)
+    assert _eval(th8)["operating_warnings"] == []
+    rm = pc.evaluate(pc.THETA_REF, fidelity=pc.Fidelity.L1, use_cache=False,
+                     calibrate=False)
+    assert rm["operating_warnings"] == [] and rm["fidelity_achieved"] == "L1"
+
+
+def test_fidelity_spec_offer_unchanged_and_exploratory():
+    assert set(cli.FIDELITY_BY_NAME) == {"L0", "L1", "L15", "L2A", "L2B"}
+    s = _spec(8.0)
+    assert s.resolve_operating_point(pc.Fidelity.L2A)["exploratory"] is True
+    assert s.resolve_operating_point(pc.Fidelity.L0)["warnings"] == []
+    assert no.DesignSpec().resolve_operating_point(
+        pc.Fidelity.L2A)["warnings"] == []
+
+
+@pytest.mark.parametrize("fid,src,exp", [
+    (0, "correlations_L0", ("L0", None)),
+    (0, "correlations_L0(cantera_unavailable)", ("L0", None)),
+    (2, "crn_L15", ("L15", None)),
+    (3, "ibrans_L2A(unavailable→crn_L1)", ("L1", "ibrans_L2A(unavailable→crn_L1)")),
+    (4, "openfoam_L2B(out_of_scope→ibrans_L2A)",
+     ("L2A", "openfoam_L2B(out_of_scope→ibrans_L2A)")),
+    (1, "crn_L1(cantera_unavailable→L0)",
+     ("L0", "crn_L1(cantera_unavailable→L0)"))])
+def test_fidelity_achieved_parses_degradation_chain(fid, src, exp):
+    assert pc.fidelity_achieved(fid, src) == exp
+
+
+# ------------------------------------------------------------------- resume
+def test_resume_micro_checkpoint_shape_and_reload(tmp_path):
+    p = tmp_path / "micro.json"
+    d = _mini(no.DesignSpec())
+    d.save(str(p))
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    assert set(payload) == {"spec", "seed", "n_evals", "history", "dataset"}
+    assert set(payload["dataset"][0]) == {"theta", *no.OUT_KEYS, "g",
+                                          "source"}
+    back = no.AutonomousCombustorDesigner.load(str(p),
+                                               fidelity=pc.Fidelity.L0,
+                                               log=lambda *a: None)
+    assert [r["g"] for r in back.recs] == [r["g"] for r in d.recs]
+    assert back.checkpoint_identity == "current"
+
+
+def test_resume_scale_current_restores_g(tmp_path):
+    p = tmp_path / "s.json"
+    d = _mini(_spec(8.0))
+    d.save(str(p))
+    back = no.AutonomousCombustorDesigner.load(str(p),
+                                               fidelity=pc.Fidelity.L0,
+                                               log=lambda *a: None)
+    assert [r["g"] for r in back.recs] == [r["g"] for r in d.recs]
+    assert back.checkpoint_identity == "current"
+
+
+def _tamper(p, fn):
+    payload = json.loads(p.read_text(encoding="utf-8"))
+    fn(payload)
+    p.write_text(json.dumps(payload), encoding="utf-8")
+
+
+@pytest.mark.parametrize("how", ["no_rev", "old_rev", "theta_op", "theta_can",
+                                 "class"])
+def test_resume_scale_incompatible_rejected_before_g(tmp_path, how):
+    p = tmp_path / "s.json"
+    _mini(_spec(8.0)).save(str(p))
+    edit = {
+        "no_rev": lambda q: q.pop("scale_policy_revision"),
+        "old_rev": lambda q: q.update(
+            scale_policy_revision="phycb-scale/1 (17.1-01, D-388)"),
+        "theta_op": lambda q: q["dataset"][2]["theta"].__setitem__(18, 7.5),
+        "theta_can": lambda q: q["dataset"][1]["theta"].__setitem__(0, 0.0),
+        "class": lambda q: q.update(operating_class="micro"),
+    }[how]
+    _tamper(p, edit)
+    with pytest.raises(no.CheckpointIncompatible) as e:
+        no.AutonomousCombustorDesigner.load(str(p), fidelity=pc.Fidelity.L0,
+                                            log=lambda *a: None)
+    assert "búsqueda nueva" in str(e.value)
+
+
+def test_resume_fidelity_mismatch_rejected(tmp_path):
+    p = tmp_path / "s.json"
+    _mini(_spec(8.0)).save(str(p))
+    with pytest.raises(no.CheckpointIncompatible) as e:
+        no.AutonomousCombustorDesigner.load(str(p), fidelity=pc.Fidelity.L1,
+                                            log=lambda *a: None)
+    assert "fidelidad" in str(e.value)
+
+
+def test_resume_historical_scale_checkpoint_query_keeps_identity(tmp_path):
+    p = tmp_path / "s.json"
+    d = _mini(_spec(8.0))
+    d.save(str(p))
+    _tamper(p, lambda q: q.pop("scale_policy_revision"))
+    spec, front = no.pareto_from_checkpoint(str(p))
+    assert front and all(q["checkpoint_identity"] == "historical"
+                         for q in front)
+    q = no.AutonomousCombustorDesigner.load(str(p), fidelity=pc.Fidelity.L0,
+                                            log=lambda *a: None,
+                                            purpose="query")
+    assert q.checkpoint_identity == "historical"
+    assert [r["g"] for r in q.recs] == [r["g"] for r in d.recs]
+    # el archivo histórico no se reescribe
+    assert "scale_policy_revision" not in json.loads(
+        p.read_text(encoding="utf-8"))
+    # un spec histórico fuera del dominio (can a 8 kg/s) también se consulta
+    _tamper(p, lambda q: q["spec"].update(arch="can"))
+    spec2, front2 = no.pareto_from_checkpoint(str(p))
+    assert spec2.operating is None
+    assert all(q["checkpoint_identity"] == "historical" for q in front2)
+
+
+def test_resume_cli_rejects_incompatible_checkpoint(tmp_path, capsys):
+    p = tmp_path / "s.json"
+    _mini(_spec(8.0)).save(str(p))
+    _tamper(p, lambda q: q.pop("scale_policy_revision"))
+    rc = cli.main(["--resume", str(p), "--rounds", "1", "--no-figures",
+                   "--no-color", "--outdir", str(tmp_path / "o")])
+    out = capsys.readouterr().out
+    assert rc == 2 and "could not resume" in out and "búsqueda nueva" in out
