@@ -2237,13 +2237,23 @@ def topology_checks(contract: dict, pim: PointInMesh, voxel: float) -> dict:
         mid = s["phi_rad"] + math.pi / g["n"]
         xm, ym = g["ring"] * math.cos(mid), g["ring"] * math.sin(mid)
         dome_between = pim.inside((xm, ym, wall_mid(xm, ym)))
-        r_ok = (hub >= 0.75 and shroud >= 0.75 and throat_vanes >= 0.60
-                and throat_wall >= 0.60 and seat_open and dome_between)
+        # álabes: el centro de cuerda de cada álabe en el radio medio y el
+        # plano de la estación (fase local = fase de la estación + 2πk/n)
+        r_mid = 0.5 * (g["r_hub"] + g["r_tip"])
+        vanes = pim.frac_inside(
+            (cx + r_mid * math.cos(s["phi_rad"] + 2 * math.pi * k / g[
+                "n_vanes"]),
+             cy + r_mid * math.sin(s["phi_rad"] + 2 * math.pi * k / g[
+                 "n_vanes"]), zc) for k in range(g["n_vanes"]))
+        r_ok = (hub >= 0.75 and shroud >= 0.75 and vanes >= 0.75
+                and throat_vanes >= 0.60 and throat_wall >= 0.60
+                and seat_open and dome_between)
         ok = ok and r_ok
         out.append(dict(phi_deg=round(math.degrees(s["phi_rad"]), 6),
                         center_mm=[round(cx, 4), round(cy, 4), round(zc, 4)],
                         z_span_mm=[round(s["z_lo"], 4), round(s["z_hi"], 4)],
                         hub_solid=hub, shroud_solid=shroud,
+                        vanes_solid=vanes,
                         throat_free_vane_plane=throat_vanes,
                         throat_free_dome_wall=throat_wall,
                         injector_seat_open=seat_open,
