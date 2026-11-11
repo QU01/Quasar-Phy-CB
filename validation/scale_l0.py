@@ -2049,11 +2049,22 @@ def stl_stats(tris: np.ndarray) -> dict:
     finite = bool(np.isfinite(tris).all())
     v0, v1, v2 = tris[:, 0], tris[:, 1], tris[:, 2]
     vol = float(np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0)
+    area = float(0.5 * np.linalg.norm(np.cross(v1 - v0, v2 - v0),
+                                      axis=1).sum())
     lo = tris.reshape(-1, 3).min(axis=0)
     hi = tris.reshape(-1, 3).max(axis=0)
     return dict(n_triangles=int(len(tris)), finite=finite,
-                volume_mm3=abs(vol),
+                volume_mm3=abs(vol), area_mm2=area,
                 bbox_mm=[float(x) for x in (*lo, *hi)])
+
+
+def volume_tolerance(v_voxel: float, area_mm2: float, voxel: float) -> float:
+    """Tolerancia de coherencia entre el volumen de la malla y el de los
+    vóxeles: 5 % o un cuarto de vóxel por el área de la superficie, lo que
+    sea mayor (la superficie extraída del campo se desplaza hasta medio
+    vóxel; en piezas finas, como los tubos del vaporizador a 1,2 mm, ese
+    término domina)."""
+    return max(0.05 * v_voxel, 0.25 * voxel * area_mm2)
 
 
 class PointInMesh:
@@ -2466,9 +2477,10 @@ def _part_checks(rep: dict, contract: dict, voxel: float,
             e.append(f"fuera de la envolvente r <= {r_env:.1f}, z en "
                      f"[{z_env[0]:.1f}, {z_env[1]:.1f}]")
         v_rep = float(p.get("volume_mm3") or 0)
-        if not (v_rep > 0 and abs(s["volume_mm3"] - v_rep) <= 0.05 * v_rep):
+        tol = volume_tolerance(v_rep, s["area_mm2"], voxel)
+        if not (v_rep > 0 and abs(s["volume_mm3"] - v_rep) <= tol):
             e.append(f"volumen de malla {s['volume_mm3']:.0f} != vóxel "
-                     f"{v_rep:.0f} (5 %)")
+                     f"{v_rep:.0f} (tolerancia {tol:.0f})")
         vols[p["name"]] = v_rep
         parts.append(dict(name=p["name"], stl=str(path),
                           stl_sha256=sha256_stream(path),
@@ -2476,7 +2488,8 @@ def _part_checks(rep: dict, contract: dict, voxel: float,
                           printable=p.get("printable"),
                           build_s=p.get("build_s"),
                           volume_voxel_mm3=v_rep, **{k: s[k] for k in (
-                              "n_triangles", "volume_mm3", "bbox_mm")},
+                              "n_triangles", "volume_mm3", "area_mm2",
+                              "bbox_mm")},
                           ok=not e, errors=e))
         errs += [f"{p['name']}: {x}" for x in e]
     if "Assembly" in vols:
@@ -2488,14 +2501,15 @@ def _part_checks(rep: dict, contract: dict, voxel: float,
 
 
 def cad_run_geometry(key: str, contract_path: Path, contract: dict,
-                     outdir: Path, bins: dict, voxel: float) -> dict:
+                     outdir: Path, bins: dict, voxel: float,
+                     timeout_s: float = CAD_GEOM_TIMEOUT_S) -> dict:
     _require_no_picogk(f"antes de {key}")
     if _bin_hashes() != bins:
         raise ScaleError(f"{key}: binarios distintos de la compilación")
     launcher = str(CB_ROOT / CAD_LAUNCHER_REL)
     run = run_bounded(["dotnet", launcher, str(contract_path), str(outdir),
                        repr(voxel)], outdir.parent / f"{key}.log",
-                      CAD_GEOM_TIMEOUT_S)
+                      timeout_s)
     after = _bin_hashes()
     _require_no_picogk(f"después de {key}")
     res = dict(key=key, run=run, voxel_mm=voxel, outdir=str(outdir),
@@ -2610,12 +2624,21 @@ def cad_t29(bins: dict, outdir: Path) -> dict:
 
 
 def cmd_cad(args) -> int:
+    voxel = float(args.voxel) if args.voxel is not None else CAD_VOXEL_MM
+    t_geom = (float(args.geom_timeout) if args.geom_timeout is not None
+              else CAD_GEOM_TIMEOUT_S)
+    diagnostic = bool(args.diagnostic)
+    if (voxel != CAD_VOXEL_MM or t_geom != CAD_GEOM_TIMEOUT_S) \
+            and not diagnostic:
+        raise ScaleError("vóxel o tope distintos del gate sólo con "
+                         "--diagnostic (evidencia no archivable)")
     ident = generator_identity()
     doc = load_acceptance()
     model = matrix_model_source(doc)
     if model is None or _changed_since(model):
         raise ScaleError("la física del checkout no es la de la matriz")
-    root = Path(args.out_root) / f"cad-{uuid.uuid4().hex[:8]}"
+    root = Path(args.out_root) / (("cad-diag-" if diagnostic else "cad-")
+                                  + uuid.uuid4().hex[:8])
     root.mkdir(parents=True, exist_ok=False)
     print(f"[cad] generador {ident['generator_source_sha'][:12]} · modelo "
           f"{model[:12]} · {root}", flush=True)
@@ -2634,7 +2657,7 @@ def cmd_cad(args) -> int:
     for arch in ACCEPT_ARCHS:
         c = contracts[arch]
         r = cad_run_geometry(arch, c["path"], json.loads(c["raw"]),
-                             root / arch, bins, CAD_VOXEL_MM)
+                             root / arch, bins, voxel, t_geom)
         r["contract"] = dict(path=str(c["path"]), sha256=c["sha256"],
                              cell=c["cell"], arch=arch,
                              operating_class=SCALE_CLASS)
@@ -2655,12 +2678,13 @@ def cmd_cad(args) -> int:
           + (f" · {k['errors']}" if k["errors"] else ""), flush=True)
     cad_runs = dict(schema=CAD_SCHEMA, generated_utc=_now(),
                     generator_source_sha=ident["generator_source_sha"],
-                    model_source_sha=model, voxel_mm=CAD_VOXEL_MM,
+                    model_source_sha=model, voxel_mm=voxel,
+                    diagnostic=diagnostic,
                     launcher=CAD_LAUNCHER_REL, library=CAD_LIBRARY_REL,
                     launcher_sha256=bins["launcher"],
                     library_sha256=bins["library"], build=build,
                     budgets=dict(build_s=CAD_BUILD_TIMEOUT_S,
-                                 geometry_s=CAD_GEOM_TIMEOUT_S,
+                                 geometry_s=t_geom,
                                  t29_s=CAD_T29_TIMEOUT_S,
                                  mem_gib=CAD_MEM_MAX_BYTES / 2 ** 30),
                     out_root=str(root), runs=runs, negative_count=neg,
@@ -2682,6 +2706,11 @@ def check_cad_runs(cad: dict, *, generator_sha=None, bins=None,
     errs = []
     if cad.get("schema") != CAD_SCHEMA:
         errs.append(f"schema {cad.get('schema')!r}")
+    if cad.get("diagnostic") or cad.get("voxel_mm") != CAD_VOXEL_MM \
+            or (cad.get("budgets") or {}).get("geometry_s") \
+            != CAD_GEOM_TIMEOUT_S:
+        errs.append("corrida diagnóstica o fuera del vóxel/tope del gate: "
+                    "no es evidencia de aceptación")
     runs = cad.get("runs") or {}
     if sorted(runs) != sorted(CAD_RUN_KEYS):
         errs.append(f"runs {sorted(runs)} != {sorted(CAD_RUN_KEYS)}")
@@ -3231,6 +3260,11 @@ def build_parser() -> argparse.ArgumentParser:
     cd = sub.add_parser("cad")
     cd.add_argument("--out-root", required=True)
     cd.add_argument("--evidence", required=True)
+    cd.add_argument("--voxel", default=None,
+                    help="sólo con --diagnostic: medida de coste, no gate")
+    cd.add_argument("--geom-timeout", default=None,
+                    help="sólo con --diagnostic: medida de coste, no gate")
+    cd.add_argument("--diagnostic", action="store_true")
     ar = sub.add_parser("archive-cad")
     ar.add_argument("--evidence", required=True)
     sub.add_parser("report")

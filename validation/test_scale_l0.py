@@ -1498,3 +1498,15 @@ def test_cad_runs_check_rejects_incomplete_block():
     errs = sl.check_cad_runs({"schema": sl.CAD_SCHEMA, "runs": {}})
     assert any("runs" in e for e in errs)
     assert any("negativo" in e for e in errs)
+
+
+def test_cad_volume_tolerance_and_diagnostic_block():
+    # 5 % en piezas macizas; un cuarto de vóxel por el área en piezas finas
+    assert sl.volume_tolerance(1e6, 1e4, 0.8) == 0.05 * 1e6
+    assert sl.volume_tolerance(2722.0, 2040.0, 1.2) == 0.25 * 1.2 * 2040.0
+    errs = sl.check_cad_runs({"schema": sl.CAD_SCHEMA, "diagnostic": True,
+                              "voxel_mm": 1.2, "runs": {}})
+    assert any("diagnóstica" in e for e in errs)
+    # vóxel distinto del gate sin --diagnostic: rechazado antes de nada
+    assert sl.main(["cad", "--out-root", "x", "--evidence", "y",
+                    "--voxel", "1.2"]) == 1
