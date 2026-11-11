@@ -1494,6 +1494,17 @@ def test_cad_recommendation_rule_is_reproducible():
         "sha256"]
 
 
+def test_founder_decision_d393_is_recorded_and_enforced():
+    doc = sl.load_acceptance()
+    rec = sl.founder_confirm(sl.recommend_pilot(doc))
+    assert rec["key"] == "8/annular" and rec["vetable"] is False
+    assert rec["founder_decision"]["id"] == "D-393"
+    assert rec["contract_sha256"].startswith("ef2f9032")
+    bad = dict(sl.recommend_pilot(doc), key="8/reverse_annular")
+    with pytest.raises(sl.ScaleError, match="D-393"):
+        sl.founder_confirm(bad)
+
+
 def test_cad_runs_check_rejects_incomplete_block():
     errs = sl.check_cad_runs({"schema": sl.CAD_SCHEMA, "runs": {}})
     assert any("runs" in e for e in errs)

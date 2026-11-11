@@ -2790,6 +2790,36 @@ def envelope_dims(contract: dict) -> dict:
                         "la carcasa; V = pi/4 D^2 L")
 
 
+#: D-393 (fundador, 2026-11-10): la arquitectura del piloto a 8 kg/s es
+#: annular (contrato ef2f9032…, fila 70). La regla D-377 se sigue calculando
+#: y archivando; si no coincide con la decisión, archive-cad se detiene.
+FOUNDER_PILOT = dict(key="8/annular", decision="D-393", date="2026-11-10",
+                     contract_prefix="ef2f9032", selection_row=70)
+
+
+def founder_confirm(rec: dict) -> dict:
+    """Registra la recomendación D-377 como decisión del fundador (D-393).
+    Exige que regla y decisión coincidan en clave, contrato y fila."""
+    fp = FOUNDER_PILOT
+    if (rec.get("key") != fp["key"]
+            or not str(rec.get("contract_sha256", "")).startswith(
+                fp["contract_prefix"])
+            or rec.get("selection_row") != fp["selection_row"]):
+        raise ScaleError(f"la regla D-377 da {rec.get('key')} (contrato "
+                         f"{str(rec.get('contract_sha256'))[:12]}, fila "
+                         f"{rec.get('selection_row')}) y {fp['decision']} "
+                         f"fija {fp['key']}: vuelve al fundador")
+    out = dict(rec)
+    out["vetable"] = False
+    out["founder_decision"] = dict(
+        id=fp["decision"], date=fp["date"], key=fp["key"],
+        text=("Confirmado por el fundador: la referencia del piloto a 8 kg/s "
+              "es 8/annular; Studio la prueba en 17.1-04 y se entrega a la "
+              "fase 18. Las dos anulares siguen en la matriz y en la "
+              "compuerta PicoGK."))
+    return out
+
+
 def recommend_pilot(doc: dict) -> dict:
     """D-377: regla reproducible a 8 kg/s.
 
@@ -2878,7 +2908,7 @@ def cmd_archive_cad(args) -> int:
         raise ScaleError(f"cad_runs inválido: {errs}")
     doc["cad_runs"] = cad
     doc["cad_evidence_sha256"] = ev["cad_evidence_sha256"]
-    doc["recommendation"] = recommend_pilot(doc)
+    doc["recommendation"] = founder_confirm(recommend_pilot(doc))
     save_acceptance(doc)
     rec = doc["recommendation"]
     print(f"[archive-cad] cad_runs archivado ({ev['cad_evidence_sha256']}) · "
@@ -3042,10 +3072,16 @@ def render_report(doc: dict) -> str:
         for s in rec["steps"]:
             w(f"- {s['rule']}: {s['result']}")
         w("")
-        w(f"**Recomendación (vetable): `{rec['key']}`** (decide "
+        fd = rec.get("founder_decision")
+        lab = (f"Recomendación confirmada por el fundador ({fd['id']}, "
+               f"{fd['date']})" if fd else "Recomendación (vetable)")
+        w(f"**{lab}: `{rec['key']}`** (la regla decide en "
           f"{rec['decided_by']}; etapa {rec['stage']}; contrato "
           f"`{rec['contract_sha256']}`; fila {rec['selection_row']}). "
           f"{rec['tradeoff']}. {rec['note']}")
+        if fd:
+            w("")
+            w(f"{fd['id']}: {fd['text']}")
         if cad:
             va = {a: cad["runs"][a]["dfam"] for a in ACCEPT_ARCHS}
             w("")
@@ -3229,6 +3265,12 @@ def cmd_verify_handoff_3(args) -> int:
                 "contract"]["sha256"] \
             or f"`{rec['key']}`".encode("utf-8") not in rblob:
         raise ScaleError("recomendación ausente o incoherente con el informe")
+    fd = rec.get("founder_decision") or {}
+    if (fd.get("id") != FOUNDER_PILOT["decision"]
+            or rec["key"] != FOUNDER_PILOT["key"]
+            or FOUNDER_PILOT["decision"].encode("utf-8") not in rblob):
+        raise ScaleError("la recomendación no registra la decisión D-393 "
+                         "del fundador (8/annular)")
     if _changed_since(src):
         raise ScaleError("la física del árbol no es la de model_source_sha: "
                          "no se puede reevaluar la matriz")
