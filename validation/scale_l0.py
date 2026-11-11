@@ -2654,7 +2654,12 @@ def cmd_cad(args) -> int:
           f"{bins['launcher'][:12]} · biblioteca {bins['library'][:12]}",
           flush=True)
     runs = {}
-    for arch in ACCEPT_ARCHS:
+    archs = list(ACCEPT_ARCHS)
+    if args.archs:
+        if not diagnostic:
+            raise ScaleError("--archs sólo con --diagnostic")
+        archs = [a for a in ACCEPT_ARCHS if a in args.archs.split(",")]
+    for arch in archs:
         c = contracts[arch]
         r = cad_run_geometry(arch, c["path"], json.loads(c["raw"]),
                              root / arch, bins, voxel, t_geom)
@@ -3265,6 +3270,8 @@ def build_parser() -> argparse.ArgumentParser:
     cd.add_argument("--geom-timeout", default=None,
                     help="sólo con --diagnostic: medida de coste, no gate")
     cd.add_argument("--diagnostic", action="store_true")
+    cd.add_argument("--archs", default=None,
+                    help="sólo con --diagnostic: subconjunto de pilotos")
     ar = sub.add_parser("archive-cad")
     ar.add_argument("--evidence", required=True)
     sub.add_parser("report")
