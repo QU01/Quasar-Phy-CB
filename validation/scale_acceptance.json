@@ -1603,6 +1603,1174 @@
    }
   }
  ],
+ "cad_evidence_sha256": "c484f837a8580a15f8a2a4d36245cf9961bd1d1f6a562296efb329cec5ba53e5",
+ "cad_runs": {
+  "budgets": {
+   "build_s": 180.0,
+   "geometry_s": 180.0,
+   "mem_gib": 18.0,
+   "t29_s": 420.0
+  },
+  "build": {
+   "argv": [
+    "dotnet",
+    "build",
+    "CombustorDesigner.sln",
+    "-t:Rebuild",
+    "-c",
+    "Debug",
+    "--no-restore",
+    "-nodeReuse:false",
+    "-p:UseSharedCompilation=false"
+   ],
+   "elapsed_s": 3.877,
+   "finished_utc": "2026-11-11T01:20:20Z",
+   "killed": null,
+   "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\build.log",
+   "log_sha256": "793fa97c074d7c62968ebb5a9b42c027ccb832303d371c9b836ab22c8a9403d1",
+   "peak_rss_gib": 0.361,
+   "rc": 0,
+   "started_utc": "2026-11-11T01:20:16Z",
+   "timeout_s": 180.0
+  },
+  "diagnostic": false,
+  "generated_utc": "2026-11-11T01:25:07Z",
+  "generator_source_sha": "e4eb7dce7c15973fedf8c32ec539c8d60204c1e4",
+  "launcher": "CombustorDesigner.Example/bin/Debug/net9.0-windows/CombustorDesigner.Example.dll",
+  "launcher_sha256": "bcaeb77bfc06d9cb5adb83f725a279f002cf7b2db4c3abb5c3c002fe26a0af6c",
+  "library": "CombustorDesigner.Example/bin/Debug/net9.0-windows/CombustorDesigner.dll",
+  "library_sha256": "36bb646e6dbc70c2026465d423541f05aed5e0621936930b958591578ba513b6",
+  "model_source_sha": "c7a9bda6ad369e0e853b09a71bb141ce76736ce4",
+  "negative_count": {
+   "contract_sha256": "eaa70fc58474e03a49a8e234e7631cf1fa46b277604c8f65fbedd4c46a56fde6",
+   "message": [
+    "Invalid contract: scale cups (operating_class annular_5_25): swirler.count = 5 cups but injectors.count = 6: one cup per injector station is required"
+   ],
+   "ok": true,
+   "run": {
+    "argv": [
+     "dotnet",
+     "C:\\Users\\nickv\\projects\\Proyectos\\Phy-CB\\CombustorDesigner.Example\\bin\\Debug\\net9.0-windows\\CombustorDesigner.Example.dll",
+     "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\contract_negative_count.json",
+     "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\negative_out",
+     "0.8"
+    ],
+    "elapsed_s": 0.095,
+    "finished_utc": "2026-11-11T01:25:01Z",
+    "killed": null,
+    "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\negative.log",
+    "log_sha256": "5017ef43b90254d100a4543cb6baee93dc8cdd11593bc9743e057e918c117f77",
+    "peak_rss_gib": 0.0,
+    "rc": 3,
+    "started_utc": "2026-11-11T01:25:01Z",
+    "timeout_s": 60.0
+   },
+   "voxelized": false
+  },
+  "ok": true,
+  "out_root": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485",
+  "runs": {
+   "annular": {
+    "bins_unchanged": true,
+    "contract": {
+     "arch": "annular",
+     "cell": "8/annular",
+     "operating_class": "annular_5_25",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\contract_8_annular.json",
+     "sha256": "ef2f9032b3bb1f61bab07955f72762994cd8903f1afe99d19e0d3078ad97d8bd"
+    },
+    "dfam": {
+     "feasible": false,
+     "frac_unsupported": {
+      "Casing": 0.026715646,
+      "Liner": 0.013865843,
+      "Vaporizer1": 0.00079617836,
+      "Vaporizer2": 0.0,
+      "Vaporizer3": 0.0,
+      "Vaporizer4": 0.00079617836,
+      "Vaporizer5": 0.0,
+      "Vaporizer6": 0.0
+     },
+     "g_voxel": [
+      4.343129,
+      -1.0,
+      -3.5
+     ],
+     "g_voxel_names": [
+      "overhang_voxel",
+      "trapped_powder",
+      "drain_exits"
+     ],
+     "violations": [
+      "overhang: part 'Casing' has 2.672 % of its solid cells with no support within 45 deg beneath them in build 'z+' (tolerance 0.5 %). Either re-orient the build, chamfer the down-skins, or raise dfam.overhang_frac_max if supports are acceptable on that surface."
+     ]
+    },
+    "dfam_report": {
+     "data": "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",
+     "encoding": "lzma+base64",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\dfam_report.json",
+     "sha256": "7d3a93d3b7fcea70cbe77d50501d6b38740692d540c63b21e20555419f9dbe0c",
+     "size_bytes": 13527
+    },
+    "errors": [],
+    "key": "annular",
+    "ok": true,
+    "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular",
+    "parts": [
+     {
+      "area_mm2": 2090191.0301320544,
+      "bbox_mm": [
+       -245.6541748046875,
+       -245.6541748046875,
+       -180.81031799316406,
+       245.65382385253906,
+       245.65382385253906,
+       232.4849395751953
+      ],
+      "build_s": 49.161,
+      "errors": [],
+      "n_triangles": 9116916,
+      "name": "Liner",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 455845884,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Liner.stl",
+      "stl_sha256": "454c2096ba5f9086cca13bfecb09e7442aec00fbab82e617e04b0752c7f28f7d",
+      "volume_mm3": 1658371.0135489888,
+      "volume_voxel_mm3": 1626919.1
+     },
+     {
+      "area_mm2": 1937649.3636747233,
+      "bbox_mm": [
+       -281.40570068359375,
+       -281.40570068359375,
+       -184.88600158691406,
+       281.40570068359375,
+       281.40570068359375,
+       235.52012634277344
+      ],
+      "build_s": 13.136,
+      "errors": [],
+      "n_triangles": 7276296,
+      "name": "Casing",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 363814884,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Casing.stl",
+      "stl_sha256": "94e1b03dd32cc00ad1cd148bd5094feb3fba5f6c42e3893e73d85d0c9e912751",
+      "volume_mm3": 2290183.383476462,
+      "volume_voxel_mm3": 2145859.5
+     },
+     {
+      "area_mm2": 2560.5520041363666,
+      "bbox_mm": [
+       201.7849578857422,
+       -2.998114585876465,
+       -11.343633651733398,
+       208.8810577392578,
+       2.998114585876465,
+       71.39839935302734
+      ],
+      "build_s": 0.108,
+      "errors": [],
+      "n_triangles": 9904,
+      "name": "Vaporizer1",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 495284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer1.stl",
+      "stl_sha256": "6653af21a5ccfef353158e48a0b5749dd364e9de927129273d584bf7c92db269",
+      "volume_mm3": 2059.1649196478006,
+      "volume_voxel_mm3": 2500.6838
+     },
+     {
+      "area_mm2": 2561.0699114780105,
+      "bbox_mm": [
+       99.39382934570312,
+       174.3506622314453,
+       -11.333385467529297,
+       105.91973114013672,
+       181.31317138671875,
+       71.42040252685547
+      ],
+      "build_s": 0.073,
+      "errors": [],
+      "n_triangles": 10628,
+      "name": "Vaporizer2",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer2.stl",
+      "stl_sha256": "31f1be662bc441d7482679f48640e8c9eb47b90ca5fb286c73066e131473e1a2",
+      "volume_mm3": 2061.2541675873763,
+      "volume_voxel_mm3": 2276.33
+     },
+     {
+      "area_mm2": 2561.1096779107347,
+      "bbox_mm": [
+       -105.91975402832031,
+       174.3506622314453,
+       -11.333385467529297,
+       -99.39385223388672,
+       181.3131561279297,
+       71.42039489746094
+      ],
+      "build_s": 0.082,
+      "errors": [],
+      "n_triangles": 10628,
+      "name": "Vaporizer3",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer3.stl",
+      "stl_sha256": "8b3692d10a2d74505a491f4db27ab7a4717485c6be9f44804ad12fac1e9795f9",
+      "volume_mm3": 2061.215191459744,
+      "volume_voxel_mm3": 2279.5054
+     },
+     {
+      "area_mm2": 2560.552819588874,
+      "bbox_mm": [
+       -208.8810577392578,
+       -2.9981327056884766,
+       -11.343634605407715,
+       -201.7849578857422,
+       2.9980969429016113,
+       71.39839935302734
+      ],
+      "build_s": 0.12,
+      "errors": [],
+      "n_triangles": 9904,
+      "name": "Vaporizer4",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 495284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer4.stl",
+      "stl_sha256": "d907c43604ee88f87641106d78d0ca30240ee97d6fd7b0af00f0071c6c5f13bb",
+      "volume_mm3": 2059.1609929352603,
+      "volume_voxel_mm3": 2499.7021
+     },
+     {
+      "area_mm2": 2561.0686494072374,
+      "bbox_mm": [
+       -105.91972351074219,
+       -181.31317138671875,
+       -11.333385467529297,
+       -99.3938217163086,
+       -174.3506622314453,
+       71.42040252685547
+      ],
+      "build_s": 0.071,
+      "errors": [],
+      "n_triangles": 10628,
+      "name": "Vaporizer5",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer5.stl",
+      "stl_sha256": "1d791619ff46c687188a2a1118a4a9fc9dac77309d2e06a889071f510ad32692",
+      "volume_mm3": 2061.2521277775218,
+      "volume_voxel_mm3": 2277.7112
+     },
+     {
+      "area_mm2": 2561.1068180004117,
+      "bbox_mm": [
+       99.39391326904297,
+       -181.3131103515625,
+       -11.33337116241455,
+       105.91981506347656,
+       -174.35064697265625,
+       71.4203872680664
+      ],
+      "build_s": 0.066,
+      "errors": [],
+      "n_triangles": 10628,
+      "name": "Vaporizer6",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular_Vaporizer6.stl",
+      "stl_sha256": "ad359ef35b83064737bc3dc21fadb73e0e78c6818a204f9397878799abe02853",
+      "volume_mm3": 2061.2137823937687,
+      "volume_voxel_mm3": 2280.431
+     },
+     {
+      "area_mm2": 4043207.199939166,
+      "bbox_mm": [
+       -281.40570068359375,
+       -281.40570068359375,
+       -184.88600158691406,
+       281.40570068359375,
+       281.40570068359375,
+       235.52012634277344
+      ],
+      "build_s": null,
+      "errors": [],
+      "n_triangles": 16455532,
+      "name": "Assembly",
+      "ok": true,
+      "printable": false,
+      "size_bytes": 822776684,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PhyCB_annular.stl",
+      "stl_sha256": "a4a79b8f272cabf2f8a359c3c9eadbb5c10f352cc424792009bf8d7f379f535c",
+      "volume_mm3": 3960932.054593789,
+      "volume_voxel_mm3": 3784504.5
+     }
+    ],
+    "picogk_log": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular\\PicoGK.log",
+     "sha256": "814d176a5c905ed881e12d56682cf56c4fb9b38f5d34083571e8672544a15fe2"
+    },
+    "run": {
+     "argv": [
+      "dotnet",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Phy-CB\\CombustorDesigner.Example\\bin\\Debug\\net9.0-windows\\CombustorDesigner.Example.dll",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\contract_8_annular.json",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular",
+      "0.8"
+     ],
+     "elapsed_s": 112.984,
+     "finished_utc": "2026-11-11T01:22:13Z",
+     "killed": null,
+     "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\annular.log",
+     "log_sha256": "2975636f2c05e3934485ae87613d7ea57b7b55245464a65273af2f95c1c0221b",
+     "peak_rss_gib": 1.76,
+     "rc": 0,
+     "started_utc": "2026-11-11T01:20:20Z",
+     "timeout_s": 180.0
+    },
+    "topology": {
+     "a_each_from_d_mm2": 3344.929054429688,
+     "a_each_mm2": 3344.929084,
+     "central_passage_open": true,
+     "central_samples": 60,
+     "elapsed_s": 5.0,
+     "n_cups": 6,
+     "n_vanes": 8,
+     "ok": true,
+     "r_hub_mm": 12.1916645,
+     "r_seat_mm": 3.8,
+     "r_tip_mm": 34.833327,
+     "ring_r_mm": 205.935466,
+     "shroud_t_mm": 1.6,
+     "stations": [
+      {
+       "center_mm": [
+        205.9355,
+        0.0,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 0.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      },
+      {
+       "center_mm": [
+        102.9677,
+        178.3453,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 60.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      },
+      {
+       "center_mm": [
+        -102.9677,
+        178.3453,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 120.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      },
+      {
+       "center_mm": [
+        -205.9355,
+        0.0,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 180.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      },
+      {
+       "center_mm": [
+        -102.9677,
+        -178.3453,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 240.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      },
+      {
+       "center_mm": [
+        102.9677,
+        -178.3453,
+        -133.9314
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 300.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        -179.4091,
+        -27.0507
+       ]
+      }
+     ],
+     "thresholds": {
+      "hub": 0.75,
+      "shroud": 0.75,
+      "throat": 0.6
+     }
+    },
+    "voxel_mm": 0.8
+   },
+   "kj66": {
+    "bins_unchanged": true,
+    "checks": {
+     "ok": 4,
+     "skipped": 0,
+     "total": 4
+    },
+    "contract": {
+     "arch": "reverse_annular",
+     "operating_class": "micro",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\combustor.json",
+     "sha256": "d44718a47dba178b323710df4cafe45450075600f3970d21c8767f701b1c603f"
+    },
+    "dfam": {
+     "feasible": false,
+     "frac_unsupported": {
+      "Casing": 0.019605637,
+      "Liner": 0.007223744,
+      "Vaporizer1": 0.0,
+      "Vaporizer2": 0.00065659883,
+      "Vaporizer3": 0.00065659883,
+      "Vaporizer4": 0.0,
+      "Vaporizer5": 0.00065659883,
+      "Vaporizer6": 0.00065659883
+     },
+     "g_voxel": [
+      2.9211273,
+      -1.0,
+      -2.0
+     ],
+     "g_voxel_names": [
+      "overhang_voxel",
+      "trapped_powder",
+      "drain_exits"
+     ],
+     "violations": [
+      "overhang: part 'Casing' has 1.961 % of its solid cells with no support within 45 deg beneath them in build 'z+' (tolerance 0.5 %). Either re-orient the build, chamfer the down-skins, or raise dfam.overhang_frac_max if supports are acceptable on that surface."
+     ]
+    },
+    "dfam_report": {
+     "data": "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",
+     "encoding": "lzma+base64",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\dfam_report.json",
+     "sha256": "8c184706bb7e0336438bf3e8db0781df7141f979c4d1cd2acc95138c794ced08",
+     "size_bytes": 13693
+    },
+    "errors": [],
+    "key": "kj66",
+    "ok": true,
+    "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66",
+    "parts": [
+     {
+      "area_mm2": 175119.40478944615,
+      "bbox_mm": [
+       -39.34183120727539,
+       -37.460235595703125,
+       0.0,
+       39.34183120727539,
+       37.460235595703125,
+       230.8207244873047
+      ],
+      "build_s": 1.802,
+      "errors": [],
+      "n_triangles": 339724,
+      "name": "Liner",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 16986284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Liner.stl",
+      "stl_sha256": "e635e156573970bcbdf1dff30821a10b810c1b7170812648b68eed4ca734b867",
+      "volume_mm3": 196147.01808845974,
+      "volume_voxel_mm3": 201621.73
+     },
+     {
+      "area_mm2": 138813.9109797381,
+      "bbox_mm": [
+       -55.121559143066406,
+       -55.121559143066406,
+       0.0,
+       55.121559143066406,
+       55.121559143066406,
+       233.65081787109375
+      ],
+      "build_s": 0.455,
+      "errors": [],
+      "n_triangles": 239544,
+      "name": "Casing",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 11977284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Casing.stl",
+      "stl_sha256": "a7d17cd4cca4055adde853ce803bb1f85c34bfce15dc08a4694d1b5f7e0455e6",
+      "volume_mm3": 174307.68918000243,
+      "volume_voxel_mm3": 167096.72
+     },
+     {
+      "area_mm2": 1989.6020549030918,
+      "bbox_mm": [
+       27.49135971069336,
+       -2.98321795463562,
+       133.09796142578125,
+       34.45759201049805,
+       2.98321795463562,
+       216.0710906982422
+      ],
+      "build_s": 0.022,
+      "errors": [],
+      "n_triangles": 3864,
+      "name": "Vaporizer1",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer1.stl",
+      "stl_sha256": "3df109603efd78d1ad6e442c08e0b61516d1c4d077b96c41aa39f325cbba11f9",
+      "volume_mm3": 2597.2148899255476,
+      "volume_voxel_mm3": 2683.8652
+     },
+     {
+      "area_mm2": 1989.184672305978,
+      "bbox_mm": [
+       12.303644180297852,
+       23.382137298583984,
+       133.08006286621094,
+       18.70738983154297,
+       30.264921188354492,
+       216.094970703125
+      ],
+      "build_s": 0.013,
+      "errors": [],
+      "n_triangles": 3868,
+      "name": "Vaporizer2",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer2.stl",
+      "stl_sha256": "8070cf8da7bf4aaeb0de6eb811bbfd4a5290099c57e09e8844d93daad44d4fce",
+      "volume_mm3": 2580.573436269112,
+      "volume_voxel_mm3": 2721.5894
+     },
+     {
+      "area_mm2": 1989.1004078490269,
+      "bbox_mm": [
+       -18.707393646240234,
+       23.38213539123535,
+       133.08006286621094,
+       -12.3036470413208,
+       30.26491928100586,
+       216.094970703125
+      ],
+      "build_s": 0.012,
+      "errors": [],
+      "n_triangles": 3868,
+      "name": "Vaporizer3",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer3.stl",
+      "stl_sha256": "f1c58962b9a7a7d6b9a5ae89db9686cef58e327cce83389bea516b10afc896e5",
+      "volume_mm3": 2580.7645909975054,
+      "volume_voxel_mm3": 2722.34
+     },
+     {
+      "area_mm2": 1989.6021747362229,
+      "bbox_mm": [
+       -34.45759582519531,
+       -2.9832208156585693,
+       133.09796142578125,
+       -27.49135971069336,
+       2.98321533203125,
+       216.0710906982422
+      ],
+      "build_s": 0.019,
+      "errors": [],
+      "n_triangles": 3864,
+      "name": "Vaporizer4",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer4.stl",
+      "stl_sha256": "c795b7e25357c24391a5329c55fc935b0ccef230cdd77106213d3ba2f09183f5",
+      "volume_mm3": 2597.215183644081,
+      "volume_voxel_mm3": 2685.6228
+     },
+     {
+      "area_mm2": 1989.1846143359892,
+      "bbox_mm": [
+       -18.707387924194336,
+       -30.264921188354492,
+       133.08006286621094,
+       -12.303642272949219,
+       -23.382137298583984,
+       216.094970703125
+      ],
+      "build_s": 0.011,
+      "errors": [],
+      "n_triangles": 3868,
+      "name": "Vaporizer5",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer5.stl",
+      "stl_sha256": "a24dde26b257815834378d7bdaad2bd95758eef40fc899dd9cd8fd9482b2647c",
+      "volume_mm3": 2580.5735107630862,
+      "volume_voxel_mm3": 2721.2334
+     },
+     {
+      "area_mm2": 1989.0997459587802,
+      "bbox_mm": [
+       12.303654670715332,
+       -30.264915466308594,
+       133.08006286621094,
+       18.7074031829834,
+       -23.382131576538086,
+       216.09498596191406
+      ],
+      "build_s": 0.011,
+      "errors": [],
+      "n_triangles": 3868,
+      "name": "Vaporizer6",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 193484,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular_Vaporizer6.stl",
+      "stl_sha256": "28a7fcd5f25c94d641c3ab5032b2f8bc1ee1a5444eb7b89d0ae5035a9402b2eb",
+      "volume_mm3": 2580.764678455142,
+      "volume_voxel_mm3": 2721.9172
+     },
+     {
+      "area_mm2": 321706.00493226293,
+      "bbox_mm": [
+       -55.121559143066406,
+       -55.121559143066406,
+       0.0,
+       55.121559143066406,
+       55.121559143066406,
+       233.65081787109375
+      ],
+      "build_s": null,
+      "errors": [],
+      "n_triangles": 596284,
+      "name": "Assembly",
+      "ok": true,
+      "printable": false,
+      "size_bytes": 29814284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\kj66\\stl\\PhyCB_reverse_annular.stl",
+      "stl_sha256": "2d14c4b248861738e4fc836547120f008ea8cd2b630eb37139cb5bf05e12c1ab",
+      "volume_mm3": 388396.3331510676,
+      "volume_voxel_mm3": 390387.1
+     }
+    ],
+    "run": {
+     "argv": [
+      "C:\\Python313\\python.exe",
+      "-B",
+      "-X",
+      "utf8",
+      "test_phycb.py",
+      "--slow",
+      "--only",
+      "T29"
+     ],
+     "elapsed_s": 5.847,
+     "finished_utc": "2026-11-11T01:25:07Z",
+     "killed": null,
+     "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\t29.log",
+     "log_sha256": "11179ee8f55331f2e4ed64ec464a784a2754d7df452cf6e295b06831a6b5c240",
+     "peak_rss_gib": 0.225,
+     "rc": 0,
+     "started_utc": "2026-11-11T01:25:01Z",
+     "timeout_s": 420.0
+    },
+    "voxel_mm": 1.2
+   },
+   "reverse_annular": {
+    "bins_unchanged": true,
+    "contract": {
+     "arch": "reverse_annular",
+     "cell": "8/reverse_annular",
+     "operating_class": "annular_5_25",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\contract_8_reverse_annular.json",
+     "sha256": "f299fb76229470d9d49b7df11989dfdc67a796083d67c2c9310e12c6ac5e1205"
+    },
+    "dfam": {
+     "feasible": false,
+     "frac_unsupported": {
+      "Casing": 0.03313634,
+      "Liner": 0.022791317,
+      "Vaporizer1": 0.0031897926,
+      "Vaporizer2": 0.0050697085,
+      "Vaporizer3": 0.001996008,
+      "Vaporizer4": 0.0031897926,
+      "Vaporizer5": 0.001996008,
+      "Vaporizer6": 0.0050697085
+     },
+     "g_voxel": [
+      5.6272683,
+      -1.0,
+      -2.5
+     ],
+     "g_voxel_names": [
+      "overhang_voxel",
+      "trapped_powder",
+      "drain_exits"
+     ],
+     "violations": [
+      "overhang: part 'Casing' has 3.314 % of its solid cells with no support within 45 deg beneath them in build 'z+' (tolerance 0.5 %). Either re-orient the build, chamfer the down-skins, or raise dfam.overhang_frac_max if supports are acceptable on that surface."
+     ]
+    },
+    "dfam_report": {
+     "data": "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",
+     "encoding": "lzma+base64",
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\dfam_report.json",
+     "sha256": "ff222598b5a35d468de6637e7799d64ca03a5b2e8e688e02e2db045d1685e647",
+     "size_bytes": 13782
+    },
+    "errors": [],
+    "key": "reverse_annular",
+    "ok": true,
+    "outdir": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular",
+    "parts": [
+     {
+      "area_mm2": 3074123.4616575525,
+      "bbox_mm": [
+       -245.65380859375,
+       -245.65380859375,
+       -1.1920928955078125e-07,
+       245.65380859375,
+       245.65380859375,
+       657.8385620117188
+      ],
+      "build_s": 54.918,
+      "errors": [],
+      "n_triangles": 13682540,
+      "name": "Liner",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 684127084,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Liner.stl",
+      "stl_sha256": "b4d8e582035aa12bca96ba1cf8cb984ff478dbf4f8d57a86dcff0f744a9629ee",
+      "volume_mm3": 2385457.2364133215,
+      "volume_voxel_mm3": 2363113.0
+     },
+     {
+      "area_mm2": 2314038.669930793,
+      "bbox_mm": [
+       -281.40570068359375,
+       -281.40570068359375,
+       -2.979905843734741,
+       281.40570068359375,
+       281.40570068359375,
+       660.4323120117188
+      ],
+      "build_s": 15.815,
+      "errors": [],
+      "n_triangles": 9153196,
+      "name": "Casing",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 457659884,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Casing.stl",
+      "stl_sha256": "552bb0db1ae056cb83dc9382f2fe53f14b32540c69af60dd2ca545fd59355995",
+      "volume_mm3": 2821207.6240031435,
+      "volume_voxel_mm3": 2666133.0
+     },
+     {
+      "area_mm2": 2560.8307250014077,
+      "bbox_mm": [
+       201.7849578857422,
+       -2.997905969619751,
+       406.148193359375,
+       208.8810577392578,
+       2.997905969619751,
+       488.9219055175781
+      ],
+      "build_s": 0.087,
+      "errors": [],
+      "n_triangles": 9912,
+      "name": "Vaporizer1",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 495684,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer1.stl",
+      "stl_sha256": "9dfe2152eeddef3c68f43b6ce34ef46be5900dcdc749d385682cd7e2946ed3b3",
+      "volume_mm3": 2059.3072383704507,
+      "volume_voxel_mm3": 2516.0452
+     },
+     {
+      "area_mm2": 2561.18432757177,
+      "bbox_mm": [
+       99.39382934570312,
+       174.3506622314453,
+       406.1260986328125,
+       105.91973114013672,
+       181.31317138671875,
+       488.91650390625
+      ],
+      "build_s": 0.057,
+      "errors": [],
+      "n_triangles": 10624,
+      "name": "Vaporizer2",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer2.stl",
+      "stl_sha256": "22b0abaa2d2566ece5c6a64f888cdc5ee64983f81477dd7152c0669772ed11ad",
+      "volume_mm3": 2061.0629769976927,
+      "volume_voxel_mm3": 2292.6401
+     },
+     {
+      "area_mm2": 2561.175414001317,
+      "bbox_mm": [
+       -105.91975402832031,
+       174.3506622314453,
+       406.1260986328125,
+       -99.39385223388672,
+       181.3131561279297,
+       488.91650390625
+      ],
+      "build_s": 0.058,
+      "errors": [],
+      "n_triangles": 10624,
+      "name": "Vaporizer3",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer3.stl",
+      "stl_sha256": "f611e788c25dae493ed7521a6c4f2632fe581f875adf33b52565fe7bd630f0f2",
+      "volume_mm3": 2061.1276034381976,
+      "volume_voxel_mm3": 2295.0422
+     },
+     {
+      "area_mm2": 2560.831510469821,
+      "bbox_mm": [
+       -208.8810577392578,
+       -2.9979238510131836,
+       406.1481628417969,
+       -201.7849578857422,
+       2.9978880882263184,
+       488.9219055175781
+      ],
+      "build_s": 0.078,
+      "errors": [],
+      "n_triangles": 9912,
+      "name": "Vaporizer4",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 495684,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer4.stl",
+      "stl_sha256": "a28aaad6b95d1190b0c27b227e19d14ddd516f4b659e0b346d1fca4faa88d13a",
+      "volume_mm3": 2059.3032412846537,
+      "volume_voxel_mm3": 2515.077
+     },
+     {
+      "area_mm2": 2561.1830007570416,
+      "bbox_mm": [
+       -105.91972351074219,
+       -181.31317138671875,
+       406.1260986328125,
+       -99.3938217163086,
+       -174.3506622314453,
+       488.91650390625
+      ],
+      "build_s": 0.064,
+      "errors": [],
+      "n_triangles": 10624,
+      "name": "Vaporizer5",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer5.stl",
+      "stl_sha256": "cd6ce9df31d1cad365231096bbdb21eb8b8e38893ad76613932dc6dc2b680b99",
+      "volume_mm3": 2061.060828898952,
+      "volume_voxel_mm3": 2293.979
+     },
+     {
+      "area_mm2": 2561.172643389814,
+      "bbox_mm": [
+       99.39391326904297,
+       -181.3131103515625,
+       406.1260986328125,
+       105.91981506347656,
+       -174.35064697265625,
+       488.91650390625
+      ],
+      "build_s": 0.059,
+      "errors": [],
+      "n_triangles": 10624,
+      "name": "Vaporizer6",
+      "ok": true,
+      "printable": true,
+      "size_bytes": 531284,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular_Vaporizer6.stl",
+      "stl_sha256": "868c5e1ceac2a456e2c6d845c621c28004ea227b9b67fa45b70620f9359ed3d7",
+      "volume_mm3": 2061.126323203647,
+      "volume_voxel_mm3": 2295.7751
+     },
+     {
+      "area_mm2": 5403528.905859292,
+      "bbox_mm": [
+       -281.40570068359375,
+       -281.40570068359375,
+       -2.979905843734741,
+       281.40570068359375,
+       281.40570068359375,
+       660.4323120117188
+      ],
+      "build_s": null,
+      "errors": [],
+      "n_triangles": 22898056,
+      "name": "Assembly",
+      "ok": true,
+      "printable": false,
+      "size_bytes": 1144902884,
+      "stl": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PhyCB_reverse_annular.stl",
+      "stl_sha256": "351e00023462155cdfeab5922be79c6fd49a7b064a3b8e82b39a8e8aadfb7d1e",
+      "volume_mm3": 5219030.590645902,
+      "volume_voxel_mm3": 5043456.0
+     }
+    ],
+    "picogk_log": {
+     "path": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular\\PicoGK.log",
+     "sha256": "a2235bc71e7fc58f40b028331d29c53edee56d2b7adaf95239f233dc3b053b5f"
+    },
+    "run": {
+     "argv": [
+      "dotnet",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Phy-CB\\CombustorDesigner.Example\\bin\\Debug\\net9.0-windows\\CombustorDesigner.Example.dll",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\contract_8_reverse_annular.json",
+      "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular",
+      "0.8"
+     ],
+     "elapsed_s": 129.804,
+     "finished_utc": "2026-11-11T01:24:39Z",
+     "killed": null,
+     "log": "C:\\Users\\nickv\\projects\\Proyectos\\Software\\QSTUDIO\\backend\\app\\workspace\\_tmp\\phase-17.1\\cad-790da485\\reverse_annular.log",
+     "log_sha256": "52c23fcf5857c7f721046396466ce83d1e9f1fd184ba1d0ea1c096d1d0cf4d7b",
+     "peak_rss_gib": 2.576,
+     "rc": 0,
+     "started_utc": "2026-11-11T01:22:29Z",
+     "timeout_s": 180.0
+    },
+    "topology": {
+     "a_each_from_d_mm2": 3344.929054429688,
+     "a_each_mm2": 3344.929084,
+     "central_passage_open": true,
+     "central_samples": 60,
+     "elapsed_s": 7.6,
+     "n_cups": 6,
+     "n_vanes": 8,
+     "ok": true,
+     "r_hub_mm": 12.1916645,
+     "r_seat_mm": 3.8,
+     "r_tip_mm": 34.833327,
+     "ring_r_mm": 205.935466,
+     "shroud_t_mm": 1.6,
+     "stations": [
+      {
+       "center_mm": [
+        205.9355,
+        0.0,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 0.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      },
+      {
+       "center_mm": [
+        102.9677,
+        178.3453,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 60.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      },
+      {
+       "center_mm": [
+        -102.9677,
+        178.3453,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 120.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      },
+      {
+       "center_mm": [
+        -205.9355,
+        0.0,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 180.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      },
+      {
+       "center_mm": [
+        -102.9677,
+        -178.3453,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 240.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      },
+      {
+       "center_mm": [
+        102.9677,
+        -178.3453,
+        611.4777
+       ],
+       "dome_solid_between_cups": true,
+       "hub_solid": 1.0,
+       "injector_seat_open": true,
+       "ok": true,
+       "phi_deg": 300.0,
+       "shroud_solid": 1.0,
+       "throat_free_dome_wall": 1.0,
+       "throat_free_vane_plane": 1.0,
+       "vanes_solid": 1.0,
+       "z_span_mm": [
+        504.597,
+        656.9553
+       ]
+      }
+     ],
+     "thresholds": {
+      "hub": 0.75,
+      "shroud": 0.75,
+      "throat": 0.6
+     }
+    },
+    "voxel_mm": 0.8
+   }
+  },
+  "schema": "phycb.cad_runs/1",
+  "voxel_mm": 0.8
+ },
  "cells": {
   "25/annular": {
    "arch": "annular",
@@ -3390,6 +4558,227 @@
   "t4": 1200.0,
   "t4_max": 1250.0,
   "workers": 1
+ },
+ "recommendation": {
+  "arch": "annular",
+  "contract_sha256": "ef2f9032b3bb1f61bab07955f72762994cd8903f1afe99d19e0d3078ad97d8bd",
+  "decided_by": "R3",
+  "founder_decision": {
+   "date": "2026-11-10",
+   "id": "D-393",
+   "key": "8/annular",
+   "text": "Confirmado por el fundador: la referencia del piloto a 8 kg/s es 8/annular; Studio la prueba en 17.1-04 y se entrega a la fase 18. Las dos anulares siguen en la matriz y en la compuerta PicoGK."
+  },
+  "key": "8/annular",
+  "note": "En L0 las dos anulares comparten la física: la decisión sale de los márgenes DfAM del contrato y del embalaje, no de una diferencia aerotérmica.",
+  "rows": {
+   "annular": {
+    "D_env_mm": 538.8161540000001,
+    "L_env_mm": 415.426217,
+    "P04_Pa": 348193.024110789,
+    "T04_K": 1200.0,
+    "V_env_m3": 0.09472508364482456,
+    "blocks": {
+     "aero": {
+      "max": -0.008601164026846853,
+      "max_name": "eta_comb"
+     },
+     "dfam": {
+      "max": -0.013510953974366968,
+      "max_name": "d_hole_min"
+     },
+     "spec": {
+      "max": -0.1242711306597638,
+      "max_name": "spec_PF_max"
+     },
+     "struct": {
+      "max": -0.24068742450129843,
+      "max_name": "T_wall"
+     }
+    },
+    "contract_sha256": "ef2f9032b3bb1f61bab07955f72762994cd8903f1afe99d19e0d3078ad97d8bd",
+    "dp_over_p": 0.03,
+    "dp_over_p_kind": "impuesta (DP_OVER_P_DESIGN en L0)",
+    "formula": "D = 2 (r_casing + t_casing); L = z_max - z_min de la carcasa; V = pi/4 D^2 L",
+    "g_dfam": [
+     -0.16666666666666663,
+     -0.013510953974366968,
+     -1.0,
+     -0.23924917174436522,
+     -0.16666666666666666
+    ],
+    "g_max": -0.008601164026846853,
+    "g_max_name": "eta_comb",
+    "g_sorted": [
+     -0.008601164026846853,
+     -0.013510953974366968,
+     -0.013511086231646985,
+     -0.09096625529534574,
+     -0.1242711306597638,
+     -0.1507754487004076,
+     -0.16666666666666663,
+     -0.16666666666666666,
+     -0.22157433836423446,
+     -0.23924917174436522,
+     -0.24068742450129843,
+     -0.24068742450129843,
+     -0.25,
+     -0.25,
+     -0.41122757316090797,
+     -0.4472553382842194,
+     -0.5262860741392544,
+     -0.581646125580237,
+     -0.581646125580237,
+     -0.611685726370176,
+     -0.950360525710905,
+     -0.9571361367151411,
+     -1.0,
+     -1.0,
+     -1.0,
+     -1.0
+    ],
+    "key": "8/annular",
+    "mdot_out_kgs": 8.184921118,
+    "selection_row": 70,
+    "stage": 1,
+    "theta": [
+     1.0,
+     0.717050301414331,
+     0.5081396711324385,
+     0.06740206867965273,
+     0.5694886988386746,
+     0.6654885037518782,
+     13.194244302074619,
+     12.60414746701842,
+     0.5068480679524492,
+     5.914617338639039,
+     2.1532425522669083,
+     5.692774191109365,
+     0.5782556881774864,
+     1.798572405633662,
+     1.195160438500722,
+     0.0,
+     358961.8805265866,
+     432.4902351398321,
+     8.0,
+     1200.0
+    ]
+   },
+   "reverse_annular": {
+    "D_env_mm": 538.8161540000001,
+    "L_env_mm": 660.432282,
+    "P04_Pa": 348193.024110789,
+    "T04_K": 1200.0,
+    "V_env_m3": 0.15059112928877175,
+    "blocks": {
+     "aero": {
+      "max": -0.008601164026846853,
+      "max_name": "eta_comb"
+     },
+     "dfam": {
+      "max": -0.013510953974366968,
+      "max_name": "d_hole_min"
+     },
+     "spec": {
+      "max": -0.1242711306597638,
+      "max_name": "spec_PF_max"
+     },
+     "struct": {
+      "max": -0.24068742450129843,
+      "max_name": "T_wall"
+     }
+    },
+    "contract_sha256": "f299fb76229470d9d49b7df11989dfdc67a796083d67c2c9310e12c6ac5e1205",
+    "dp_over_p": 0.03,
+    "dp_over_p_kind": "impuesta (DP_OVER_P_DESIGN en L0)",
+    "formula": "D = 2 (r_casing + t_casing); L = z_max - z_min de la carcasa; V = pi/4 D^2 L",
+    "g_dfam": [
+     -0.16666666666666663,
+     -0.013510953974366968,
+     -0.2222222133322202,
+     -0.24476490538651197,
+     -0.16666666666666666
+    ],
+    "g_max": -0.008601164026846853,
+    "g_max_name": "eta_comb",
+    "g_sorted": [
+     -0.008601164026846853,
+     -0.013510953974366968,
+     -0.013511086231646985,
+     -0.09096625529534574,
+     -0.1242711306597638,
+     -0.1507754487004076,
+     -0.16666666666666663,
+     -0.16666666666666666,
+     -0.22157433836423446,
+     -0.2222222133322202,
+     -0.24068742450129843,
+     -0.24068742450129843,
+     -0.24476490538651197,
+     -0.25,
+     -0.25,
+     -0.41122757316090797,
+     -0.4472553382842194,
+     -0.5262860741392544,
+     -0.581646125580237,
+     -0.581646125580237,
+     -0.611685726370176,
+     -0.950360525710905,
+     -0.9571361367151411,
+     -1.0,
+     -1.0,
+     -1.0
+    ],
+    "key": "8/reverse_annular",
+    "mdot_out_kgs": 8.184921118,
+    "selection_row": 70,
+    "stage": 1,
+    "theta": [
+     2.0,
+     0.717050301414331,
+     0.5081396711324385,
+     0.06740206867965273,
+     0.5694886988386746,
+     0.6654885037518782,
+     13.194244302074619,
+     12.60414746701842,
+     0.5068480679524492,
+     5.914617338639039,
+     2.1532425522669083,
+     5.692774191109365,
+     0.5782556881774864,
+     1.798572405633662,
+     1.195160438500722,
+     0.0,
+     358961.8805265866,
+     432.4902351398321,
+     8.0,
+     1200.0
+    ]
+   }
+  },
+  "selection_row": 70,
+  "stage": 1,
+  "steps": [
+   {
+    "result": "empate por construcción: Δp/p = 0,030 impuesto en L0 en ambas; no se usa para ordenar",
+    "rule": "R1 pérdida de presión"
+   },
+   {
+    "result": "empate: g_max = -0.008601 (eta_comb) en ambas",
+    "rule": "R2 peor g global"
+   },
+   {
+    "result": "posición 9 del vector ordenado: annular -0.239249 frente a reverse_annular -0.222222; gana annular",
+    "rule": "R3 márgenes ordenados"
+   },
+   {
+    "result": "V_env annular 0.0947 m³ frente a reverse_annular 0.1506 m³; menor: annular",
+    "rule": "R4 embalaje"
+   }
+  ],
+  "tradeoff": "sin compromiso: el embalaje confirma la regla",
+  "vetable": false
  },
  "schema": "phycb.scale_acceptance/1",
  "stages": [
