@@ -132,6 +132,7 @@ namespace CombustorDesigner
                         strFilter, StringComparison.OrdinalIgnoreCase))
                     continue;
 
+                LatticeUtils.FlushFinalizers();
                 long lMs0 = oWatch.ElapsedMilliseconds;
                 Voxels vox = fnBuild();
                 if (vox == null || vox.bIsEmpty())
@@ -215,6 +216,7 @@ namespace CombustorDesigner
             }
 
             // -- assembly (inspection only) -------------------------------
+            LatticeUtils.FlushFinalizers();
             long lMsAsm = oWatch.ElapsedMilliseconds;
             voxAssembly.CalculateProperties(out float fVolAsm,
                                             out BBox3 oBBAsm);
@@ -239,6 +241,7 @@ namespace CombustorDesigner
 
             // -- DfAM re-verification on the built voxels -----------------
             DfamVoxelReport oDfam = null;
+            LatticeUtils.FlushFinalizers();
             long lMsDfam = oWatch.ElapsedMilliseconds;
             try
             {
@@ -338,7 +341,7 @@ namespace CombustorDesigner
                     Library.Log("Liner: the swirler is MONOLITHIC with the "
                               + "dome (contract swirler.monolithic_with_dome)"
                               + " - unioned into this part.");
-                    vox += Swirler.voxSwirler(p);
+                    LatticeUtils.Add(vox, Swirler.voxSwirler(p));
                 }
                 return vox;
             }));

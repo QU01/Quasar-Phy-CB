@@ -45,9 +45,9 @@ namespace CombustorDesigner
             float fT = p.fPrintableMm(p.Liner.TWallMm, "liner wall");
 
             // D-392: every boolean below is IN PLACE and its tool solid is
-            // disposed at once. The operators (vox -= x) allocate a new
+            // disposed at once. The operators (LatticeUtils.Sub(vox, x) allocate a new
             // field per step and leave the old one and the tool to the
-            // finalizer; at the 8 kg/s scale those native grids piled up to
+            // finalizer); at the 8 kg/s scale those native grids piled up to
             // ~10 GiB (see Casing). Same booleans, same order, same result.
             var oStage = System.Diagnostics.Stopwatch.StartNew();
 
@@ -84,6 +84,7 @@ namespace CombustorDesigner
             LatticeUtils.Add(vox, voxSeats(p, fT));
 
             // 6. root fillet by RESTRICTED morphological closing
+            LatticeUtils.FlushFinalizers();
             vox = voxWithDomeFillet(p, vox);
             LogStage("seats + root fillet", oStage);
 
@@ -98,6 +99,7 @@ namespace CombustorDesigner
             //    voxel field, the implicit evaluated over shell tiles only
             if (oEffusion != null && !oEffusion.bIsEmpty)
             {
+                LatticeUtils.FlushFinalizers();
                 var oWatch = System.Diagnostics.Stopwatch.StartNew();
                 Voxels voxEff = oEffusion.voxRender(p.VoxelSizeMm,
                                                     out string strHow);
@@ -324,8 +326,11 @@ namespace CombustorDesigner
                         ? LatticeUtils.voxTeardropBetween(vecA, vecB, fR, vecUp)
                         : LatticeUtils.voxBeam(vecA, vecB, fR);
                     if (voxHole.bIsEmpty())
+                    {
+                        voxHole.Dispose();
                         continue;
-                    voxAll = voxAll == null ? voxHole : voxAll + voxHole;
+                    }
+                    voxAll = voxAll == null ? voxHole : LatticeUtils.Add(voxAll, voxHole);
                 }
             }
             return voxAll;
@@ -408,7 +413,7 @@ namespace CombustorDesigner
                     vecPos + vecOut * fBossT,
                     vecPos - vecOut * (2f * fBossT),
                     0.5f * fDSeat + fBossT);
-                vox = vox == null ? voxB : vox + voxB;
+                vox = vox == null ? voxB : LatticeUtils.Add(vox, voxB);
             }
             return vox ?? new Voxels();
         }
@@ -431,7 +436,7 @@ namespace CombustorDesigner
                     vecPos + new Vector3(0f, 0f, fReach),
                     vecPos - new Vector3(0f, 0f, fReach),
                     0.5f * fDSeat);
-                vox = vox == null ? voxB : vox + voxB;
+                vox = vox == null ? voxB : LatticeUtils.Add(vox, voxB);
             }
 
             if (p.Swirler.NVanes > 0 && p.Swirler.DTipMm > 0f
@@ -440,7 +445,7 @@ namespace CombustorDesigner
                 float fRT = 0.5f * p.Swirler.DTipMm + p.VoxelSizeMm;
                 Voxels voxS = LatticeUtils.voxCylinderZ(
                     new Vector3(0f, 0f, fZD - fReach), fRT, 2f * fReach);
-                vox = vox == null ? voxS : vox + voxS;
+                vox = vox == null ? voxS : LatticeUtils.Add(vox, voxS);
             }
             return vox ?? new Voxels();
         }
@@ -577,7 +582,7 @@ namespace CombustorDesigner
                 Voxels voxT = LatticeUtils.voxCylinderZ(
                     new Vector3(st.vecC.X, st.vecC.Y, st.fZLo), fRT,
                     st.fZHi - st.fZLo);
-                vox = vox == null ? voxT : vox + voxT;
+                vox = vox == null ? voxT : LatticeUtils.Add(vox, voxT);
                 Library.Log($"Liner: cup station phi {st.fPhiDeg:0.###} deg at "
                           + $"({st.vecC.X:0.###}, {st.vecC.Y:0.###}, "
                           + $"{st.vecC.Z:0.###}) mm, throat r {fRT:0.###} mm "

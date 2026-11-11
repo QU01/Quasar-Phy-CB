@@ -152,7 +152,7 @@ namespace CombustorDesigner
             aBore.Add(aPts[aPts.Count - 1]
                       + 3f * Vector3.Normalize(aPts[aPts.Count - 1]
                                                - aPts[aPts.Count - 2]));
-            vox -= LatticeUtils.voxSweepPolyline(aBore, fRi, true);
+            LatticeUtils.Sub(vox, LatticeUtils.voxSweepPolyline(aBore, fRi, true));
 
             Library.Log($"Vaporizer {i + 1}: walking stick swept over "
                       + $"{aPts.Count} points, d {fD:0.##} mm, wall "
@@ -183,31 +183,31 @@ namespace CombustorDesigner
                 Voxels voxB = LatticeUtils.voxBeam(
                     vecBase, vecBase - new Vector3(0f, 0f, fSign * fL),
                     0.5f * fDBody);
-                voxB -= LatticeUtils.voxBeam(
+                LatticeUtils.Sub(voxB, LatticeUtils.voxBeam(
                     vecBase + new Vector3(0f, 0f, fSign),
                     vecBase - new Vector3(0f, 0f, fSign * (fL + 1f)),
-                    0.5f * fDBody - fT);
+                    0.5f * fDBody - fT));
                 // central fuel post with its metering bore
                 Voxels voxPost = LatticeUtils.voxBeam(
                     vecBase, vecBase - new Vector3(0f, 0f, fSign * 0.65f * fL),
                     0.5f * fBore + fT);
-                voxPost -= LatticeUtils.voxBeam(
+                LatticeUtils.Sub(voxPost, LatticeUtils.voxBeam(
                     vecBase + new Vector3(0f, 0f, fSign),
                     vecBase - new Vector3(0f, 0f, fSign * (0.65f * fL + 1f)),
-                    0.5f * fBore);
+                    0.5f * fBore));
                 // prefilmer lip: a thin ring bridging post and barrel
                 Voxels voxLip = LatticeUtils.voxBeam(
                     vecBase - new Vector3(0f, 0f, fSign * 0.65f * fL),
                     vecBase - new Vector3(0f, 0f,
                                           fSign * (0.65f * fL + fT)),
                     0.5f * fDBody - fT);
-                voxLip -= LatticeUtils.voxBeam(
+                LatticeUtils.Sub(voxLip, LatticeUtils.voxBeam(
                     vecBase - new Vector3(0f, 0f, fSign * (0.65f * fL - 1f)),
                     vecBase - new Vector3(0f, 0f,
                                           fSign * (0.65f * fL + fT + 1f)),
-                    0.5f * fBore);
-                Voxels voxOne = voxB + voxPost + voxLip;
-                vox = vox == null ? voxOne : vox + voxOne;
+                    0.5f * fBore));
+                Voxels voxOne = LatticeUtils.Add(LatticeUtils.Add(voxB, voxPost), voxLip);
+                vox = vox == null ? voxOne : LatticeUtils.Add(vox, voxOne);
             }
             Library.Log($"Injector: {p.Injectors.Count} airblast body(ies), "
                       + $"d_body {fDBody:0.##} mm, bore {fBore:0.##} mm, "
@@ -232,16 +232,16 @@ namespace CombustorDesigner
                     vecBase, vecBase - new Vector3(0f, 0f, fSign * fL),
                     0.5f * fDBody);
                 // stepped bore: wide swirl chamber then the metering orifice
-                voxB -= LatticeUtils.voxBeam(
+                LatticeUtils.Sub(voxB, LatticeUtils.voxBeam(
                     vecBase + new Vector3(0f, 0f, fSign),
                     vecBase - new Vector3(0f, 0f, fSign * 0.7f * fL),
                     MathF.Max(1.8f * 0.5f * fBore, 0.5f * fBore
-                              + 2f * p.VoxelSizeMm));
-                voxB -= LatticeUtils.voxBeam(
+                              + 2f * p.VoxelSizeMm)));
+                LatticeUtils.Sub(voxB, LatticeUtils.voxBeam(
                     vecBase - new Vector3(0f, 0f, fSign * 0.6f * fL),
                     vecBase - new Vector3(0f, 0f, fSign * (fL + 1f)),
-                    0.5f * fBore);
-                vox = vox == null ? voxB : vox + voxB;
+                    0.5f * fBore));
+                vox = vox == null ? voxB : LatticeUtils.Add(vox, voxB);
             }
             Library.Log($"Injector: {p.Injectors.Count} simplex body(ies), "
                       + $"d_body {fDBody:0.##} mm, orifice {fBore:0.##} mm");
@@ -272,18 +272,18 @@ namespace CombustorDesigner
             Voxels vox = LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZ - 0.5f * fT), fRing + 0.5f * fWidth,
                 fT);
-            vox -= LatticeUtils.voxCylinderZ(
+            LatticeUtils.Sub(vox, LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZ - 0.5f * fT - 1f),
-                MathF.Max(fRing - 0.5f * fWidth, 0.5f), fT + 2f);
+                MathF.Max(fRing - 0.5f * fWidth, 0.5f), fT + 2f));
             for (int k = 0; k < n; k++)
             {
                 float fPhi = 2f * MathF.PI * k / n;
                 Vector3 vecC = new Vector3(fRing * MathF.Cos(fPhi),
                                            fRing * MathF.Sin(fPhi), fZ);
-                vox -= LatticeUtils.voxBeam(
+                LatticeUtils.Sub(vox, LatticeUtils.voxBeam(
                     vecC + new Vector3(0f, 0f, fSign * (fT + 2f)),
                     vecC - new Vector3(0f, 0f, fSign * (fT + 2f)),
-                    0.5f * fDJet);
+                    0.5f * fDJet));
             }
             Library.Log($"Injector: micromix plate with {n} jets of "
                       + $"{fDJet:0.###} mm on r = {fRing:0.#} mm");

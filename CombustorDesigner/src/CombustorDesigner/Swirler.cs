@@ -79,7 +79,7 @@ namespace CombustorDesigner
                 ? voxRadialVanes(p, fRHub, fRTip, fZ, fChord, fVaneT)
                 : voxAxialVanes(p, fRHub, fRTip, fZ, fChord, fVaneT);
             if (voxVanes != null && !voxVanes.bIsEmpty())
-                vox += voxVanes;
+                LatticeUtils.Add(vox, voxVanes);
 
             // shroud ring: welds the vane tips together so the part is one
             // rigid piece (and gives the dome bore something to seat on)
@@ -87,10 +87,10 @@ namespace CombustorDesigner
             Voxels voxShroud = LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZ - 0.5f * fChord), fRTip + fShroud,
                 fChord);
-            voxShroud -= LatticeUtils.voxCylinderZ(
+            LatticeUtils.Sub(voxShroud, LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZ - 0.5f * fChord - 1f), fRTip,
-                fChord + 2f);
-            vox += voxShroud;
+                fChord + 2f));
+            LatticeUtils.Add(vox, voxShroud);
 
             Library.Log($"Swirler: {p.Swirler.NVanes} {strType} vanes, beta "
                       + $"{p.Swirler.BetaDeg:0.#} deg (SN {p.Swirler.SN:0.##}), "
@@ -135,20 +135,20 @@ namespace CombustorDesigner
                 Voxels voxVanes = voxAxialVanes(p, fRHub, fRTip, fZ, fChord,
                                                 fVaneT, fCx, fCy, fPhiSt);
                 if (voxVanes != null && !voxVanes.bIsEmpty())
-                    voxCup += voxVanes;
-                voxCup -= LatticeUtils.voxCylinderZ(
+                    LatticeUtils.Add(voxCup, voxVanes);
+                LatticeUtils.Sub(voxCup, LatticeUtils.voxCylinderZ(
                     new Vector3(fCx, fCy, fZ - 0.5f * fChord - 1f), fRSeat,
-                    fChord + 2f);
+                    fChord + 2f));
 
                 // shroud tube over the full station span
                 Voxels voxShroud = LatticeUtils.voxCylinderZ(
                     new Vector3(fCx, fCy, st.fZLo), fRTip + fShroud,
                     st.fZHi - st.fZLo);
-                voxShroud -= LatticeUtils.voxCylinderZ(
+                LatticeUtils.Sub(voxShroud, LatticeUtils.voxCylinderZ(
                     new Vector3(fCx, fCy, st.fZLo - 1f), fRTip,
-                    st.fZHi - st.fZLo + 2f);
-                voxCup += voxShroud;
-                vox = vox == null ? voxCup : vox + voxCup;
+                    st.fZHi - st.fZLo + 2f));
+                LatticeUtils.Add(voxCup, voxShroud);
+                vox = vox == null ? voxCup : LatticeUtils.Add(vox, voxCup);
             }
 
             Library.Log($"Swirler: {aSt.Count} swirl cups (annular_5_25) on "
@@ -214,7 +214,7 @@ namespace CombustorDesigner
                 float fPhi0 = fPhiBase + 2f * MathF.PI * k / p.Swirler.NVanes;
                 AddVaneSolid(msh, aRibs, fZ, fPhi0, fCx, fCy);
             }
-            return new Voxels(msh);
+            return LatticeUtils.voxFrom(msh);
         }
 
         /// <summary>Closed "stadium" section in the chord frame: a flat
@@ -361,7 +361,7 @@ namespace CombustorDesigner
                     fRHub * MathF.Cos(fPhi + fDPhi),
                     fRHub * MathF.Sin(fPhi + fDPhi), fZ);
                 Voxels voxV = voxFlatVane(vecOut, vecIn, fVaneT, fChord);
-                vox = vox == null ? voxV : vox + voxV;
+                vox = vox == null ? voxV : LatticeUtils.Add(vox, voxV);
             }
             return vox ?? new Voxels();
         }
@@ -399,7 +399,7 @@ namespace CombustorDesigner
             msh.AddQuad(an[1], an[2], an[6], an[5]);
             msh.AddQuad(an[2], an[3], an[7], an[6]);
             msh.AddQuad(an[3], an[0], an[4], an[7]);
-            return new Voxels(msh);
+            return LatticeUtils.voxFrom(msh);
         }
     }
 }

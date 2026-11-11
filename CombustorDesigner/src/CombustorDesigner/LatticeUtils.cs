@@ -45,7 +45,7 @@ namespace CombustorDesigner
                                     float fZ)
         {
             Mesh msh = Utils.mshCreateCube(new Vector3(fX, fY, fZ), vecCenter);
-            return new Voxels(msh);
+            return voxFrom(msh);
         }
 
         /// <summary>
@@ -70,13 +70,48 @@ namespace CombustorDesigner
                 lat.AddBeam(vecBaseBottom, fR,
                             vecBaseBottom + new Vector3(0, 0, fL), fR,
                             false);
-                return new Voxels(lat);
+                return voxFrom(lat);
             }
             if (MathF.Abs(fL) < 1e-6f || fR <= 0f)
                 return new Voxels();
             Mesh msh = mshRevolveZ(
                 new[] { vecBaseBottom.Z, vecBaseBottom.Z + fL },
                 new[] { fR, fR }, vecBaseBottom.X, vecBaseBottom.Y);
+            Voxels vox = new Voxels(msh);
+            msh.Dispose();
+            return vox;
+        }
+
+        /// <summary>
+        /// D-392: runs every pending finalizer NOW, between native calls.
+        /// PicoGK objects that reach the finalizer are destroyed on the
+        /// finalizer thread, concurrently with whatever the build thread is
+        /// doing inside the (single-threaded by design) native library;
+        /// the 8 kg/s builds died twice with 0xC0000374 (heap corruption)
+        /// in the middle of long native operations. Every transient object
+        /// is now disposed explicitly; this flush drains whatever is left
+        /// at the safe points (before each part, the fillet, the effusion,
+        /// the assembly and the DfAM pass).
+        /// </summary>
+        public static void FlushFinalizers()
+        {
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+        }
+
+        /// <summary>Voxelizes a lattice and releases it at once (D-392:
+        /// no native object is left to the finalizer thread).</summary>
+        public static Voxels voxFrom(Lattice lat)
+        {
+            Voxels vox = new Voxels(lat);
+            lat.Dispose();
+            return vox;
+        }
+
+        /// <summary>Voxelizes a mesh and releases it at once.</summary>
+        public static Voxels voxFrom(Mesh msh)
+        {
             Voxels vox = new Voxels(msh);
             msh.Dispose();
             return vox;
@@ -223,7 +258,7 @@ namespace CombustorDesigner
 
             Lattice lat = new Lattice();
             lat.AddBeam(vecBase, fR, vecBase + fL * vecZ, fR, false);
-            return new Voxels(lat);
+            return voxFrom(lat);
         }
 
         /// <summary>Solid beam (cylinder) between two arbitrary points.
@@ -234,7 +269,7 @@ namespace CombustorDesigner
         {
             Lattice lat = new Lattice();
             lat.AddBeam(vecA, fR, vecB, fR, bRound);
-            return new Voxels(lat);
+            return voxFrom(lat);
         }
 
         /// <summary>
@@ -258,7 +293,7 @@ namespace CombustorDesigner
             }
             if (nAdded == 0)
                 return new Voxels();
-            return new Voxels(lat);
+            return voxFrom(lat);
         }
 
         /// <summary>
@@ -285,7 +320,7 @@ namespace CombustorDesigner
                             new Vector3(0f, 0f, b.Y), MathF.Max(fRb, 0.05f),
                             false);
             }
-            return new Voxels(lat);
+            return voxFrom(lat);
         }
 
         /// <summary>
@@ -371,7 +406,7 @@ namespace CombustorDesigner
                                 new Vector3(0f, 0f, aZ[i + 1]),
                                 MathF.Max(fRb, fRMinMm), false);
                 }
-                return new Voxels(lat);
+                return voxFrom(lat);
             }
 
             if (aZ[aZ.Count - 1] < aZ[0])
@@ -474,7 +509,7 @@ namespace CombustorDesigner
                 msh.nAddTriangle(anBase[0], anBase[i + 1], anBase[i]);
                 msh.nAddTriangle(anTop[0], anTop[i], anTop[i + 1]);
             }
-            return new Voxels(msh);
+            return voxFrom(msh);
         }
 
         /// <summary>Clamped linear interpolation of a [[z, ...]] polyline:
@@ -556,7 +591,7 @@ namespace CombustorDesigner
                             vecB + new Vector3(0f, 0f, fT + 2f),
                             0.5f * fDBolt, false);
             }
-            return new Voxels(lat);
+            return voxFrom(lat);
         }
     }
 }
