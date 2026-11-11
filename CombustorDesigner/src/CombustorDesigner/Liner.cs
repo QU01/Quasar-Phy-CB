@@ -44,65 +44,90 @@ namespace CombustorDesigner
         {
             float fT = p.fPrintableMm(p.Liner.TWallMm, "liner wall");
 
+            // D-392: every boolean below is IN PLACE and its tool solid is
+            // disposed at once. The operators (vox -= x) allocate a new
+            // field per step and leave the old one and the tool to the
+            // finalizer; at the 8 kg/s scale those native grids piled up to
+            // ~10 GiB (see Casing). Same booleans, same order, same result.
+            var oStage = System.Diagnostics.Stopwatch.StartNew();
+
             // 1-2. outer wall as an open tube
             Voxels vox = LatticeUtils.voxRevolveProfileZ(p.Liner.Profile, 2);
-            vox -= LatticeUtils.voxRevolveProfileZ(p.Liner.Profile, 2, -fT,
-                                                   fOpenEndMm);
+            LatticeUtils.Sub(vox, LatticeUtils.voxRevolveProfileZ(
+                p.Liner.Profile, 2, -fT, fOpenEndMm));
 
             // 3. inner wall of an annular / reverse-annular liner
             if (bHasInnerWall(p))
             {
                 Voxels voxIn = LatticeUtils.voxRevolveProfileZ(
                     p.Liner.Profile, 1, fT);
-                voxIn -= LatticeUtils.voxRevolveProfileZ(p.Liner.Profile, 1,
-                                                         0f, fOpenEndMm);
-                vox += voxIn;
+                LatticeUtils.Sub(voxIn, LatticeUtils.voxRevolveProfileZ(
+                    p.Liner.Profile, 1, 0f, fOpenEndMm));
+                LatticeUtils.Add(vox, voxIn);
                 Library.Log("Liner: annular flame tube - inner wall added "
                           + $"(r_inner {p.Liner.Profile[0][1]:0.#} -> "
                           + $"{p.Liner.Profile[p.Liner.Profile.Length - 1][1]:0.#}"
                           + " mm)");
             }
+            LogStage("walls", oStage);
 
             // 3b. optional impingement/effusion double wall - the cavity that
             //     makes powder drainability the binding constraint (4.4)
             if (p.Liner.DoubleWall != null)
-                vox += voxDoubleWall(p, fT);
+                LatticeUtils.Add(vox, voxDoubleWall(p, fT));
 
             // 4. dome
-            vox += voxDome(p, fT);
+            LatticeUtils.Add(vox, voxDome(p, fT));
+            LogStage("dome", oStage);
 
             // 5. injector + swirler seats (material first, bores at step 9)
-            vox += voxSeats(p, fT);
+            LatticeUtils.Add(vox, voxSeats(p, fT));
 
             // 6. root fillet by RESTRICTED morphological closing
             vox = voxWithDomeFillet(p, vox);
+            LogStage("seats + root fillet", oStage);
 
             // 7. discrete hole rows
             Voxels voxHoles = voxHoleRows(p);
             if (voxHoles != null && !voxHoles.bIsEmpty())
-                vox -= voxHoles;
+                vox.BoolSubtract(voxHoles);
+            voxHoles?.Dispose();
+            LogStage("hole rows", oStage);
 
-            // 8. the effusion field - one implicit, hundreds of holes
+            // 8. the effusion field - hundreds to thousands of holes in ONE
+            //    voxel field, the implicit evaluated over shell tiles only
             if (oEffusion != null && !oEffusion.bIsEmpty)
             {
                 var oWatch = System.Diagnostics.Stopwatch.StartNew();
-                BBox3 oBox = oEffusion.oBounds;
-                Voxels voxEff = new Voxels(oEffusion, oBox);
-                vox -= voxEff;
+                Voxels voxEff = oEffusion.voxRender(p.VoxelSizeMm,
+                                                    out string strHow);
+                LatticeUtils.Sub(vox, voxEff);
                 Library.Log(
                     $"Liner: effusion field - {oEffusion.nHoleCount} holes ("
                     + (oEffusion.bIsTeardrop ? "teardrop" : p.Effusion.Shape)
                     + $", d {p.Effusion.DMm:0.###} mm, "
                     + $"{p.Effusion.AngleDeg:0.#} deg from the wall, porosity "
                     + $"{100f * oEffusion.fPorosity(p):0.##} %) rendered as ONE "
-                    + $"implicit in {oWatch.ElapsedMilliseconds / 1000f:0.0} s");
+                    + $"{strHow} in {oWatch.ElapsedMilliseconds / 1000f:0.0} s");
             }
+            LogStage("effusion", oStage);
 
             // 9. bores last
             Voxels voxBores = voxSeatBores(p);
             if (!voxBores.bIsEmpty())
-                vox -= voxBores;
+                vox.BoolSubtract(voxBores);
+            voxBores.Dispose();
+            LogStage("seat bores / cup throats", oStage);
             return vox;
+        }
+
+        /// <summary>Per-stage timing line (D-392 profiling evidence).</summary>
+        static void LogStage(string strStage,
+                             System.Diagnostics.Stopwatch oWatch)
+        {
+            Library.Log($"TIMING liner {strStage}: "
+                      + $"{oWatch.ElapsedMilliseconds / 1000f:0.0} s");
+            oWatch.Restart();
         }
 
         /// <summary>True when the contract carries a real inner annulus wall
@@ -165,8 +190,8 @@ namespace CombustorDesigner
                 Voxels voxFlat = LatticeUtils.voxCylinderZ(
                     new Vector3(0f, 0f, fZ0), fRo, fT);
                 if (fRi > 1e-3f)
-                    voxFlat -= LatticeUtils.voxCylinderZ(
-                        new Vector3(0f, 0f, fZ0 - 1f), fRi, fT + 2f);
+                    LatticeUtils.Sub(voxFlat, LatticeUtils.voxCylinderZ(
+                        new Vector3(0f, 0f, fZ0 - 1f), fRi, fT + 2f));
                 return voxFlat;
             }
 
@@ -193,12 +218,13 @@ namespace CombustorDesigner
                 };
             }
             Voxels vox = LatticeUtils.voxRevolveProfileZ(afOuter, 1);
-            vox -= LatticeUtils.voxRevolveProfileZ(afInner, 1, 0f, fOpenEndMm);
+            LatticeUtils.Sub(vox, LatticeUtils.voxRevolveProfileZ(
+                afInner, 1, 0f, fOpenEndMm));
             if (fRi > 1e-3f)
             {
                 // annular dome: open the bore for the inner flow path
-                vox -= LatticeUtils.voxCylinderZ(
-                    new Vector3(0f, 0f, fZD - fRo - 2f), fRi, 2f * fRo + 4f);
+                LatticeUtils.Sub(vox, LatticeUtils.voxCylinderZ(
+                    new Vector3(0f, 0f, fZD - fRo - 2f), fRi, 2f * fRo + 4f));
             }
             return vox;
         }
@@ -230,7 +256,8 @@ namespace CombustorDesigner
                 afIn[i] = new float[] { fZ, fR + fGap };
             }
             Voxels vox = LatticeUtils.voxRevolveProfileZ(afOut, 1);
-            vox -= LatticeUtils.voxRevolveProfileZ(afIn, 1, 0f, fOpenEndMm);
+            LatticeUtils.Sub(vox, LatticeUtils.voxRevolveProfileZ(
+                afIn, 1, 0f, fOpenEndMm));
             Library.Log($"Liner: double wall gap {fGap:0.##} mm over z "
                       + $"{fZ0:0.#}-{fZ1:0.#} mm - this cavity MUST clear the "
                       + "powder drainability check (EstadoDelArte 4.4)");
@@ -586,12 +613,36 @@ namespace CombustorDesigner
 
             Voxels voxBand = LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZD - fBand), fRo, 2f * fBand);
-            Voxels voxFil = new Voxels(vox);
+            // D-392: the closing only reads the part within 2 r of a point,
+            // so on a large part it runs on a copy TRIMMED to the band plus
+            // 2 r and four voxels of margin: inside the band the result is
+            // the one the whole-part pass gives (identical triangles at
+            // 1e-4 mm on the KJ66 liner), at a fraction of the cost (43 s
+            // on the 8 kg/s liner at 0.8 mm). The trim faces are farther
+            // than 2 r from the band and never reach it. A part whose whole
+            // box is under the lattice budget keeps the historical
+            // whole-part pass bit for bit.
+            float fReach = 2f * fR + 4f * p.VoxelSizeMm;
+            float fXY = fRo + fReach;
+            float fZ0 = p.Liner.Profile[0][0];
+            float fZ1 = p.Liner.Profile[p.Liner.Profile.Length - 1][0];
+            double dV = p.VoxelSizeMm;
+            double dPartVoxels = (2.0 * fXY / dV) * (2.0 * fXY / dV)
+                               * (Math.Abs(fZ1 - fZ0) + 2.0 * fRo) / dV;
+            Voxels voxFil = dPartVoxels <= LatticeUtils.dLatticeBudgetVoxels
+                ? new Voxels(vox)
+                : vox.voxTrim(LatticeUtils.oBBox(
+                    new Vector3(-fXY, -fXY, fZD - fBand - fReach),
+                    new Vector3(fXY, fXY, fZD + fBand + fReach)));
             voxFil.Fillet(fR);
             Library.Log($"Liner: dome root fillet r = {fR:0.##} mm by "
                       + "restricted morphological closing (same radius the "
                       + "structural notch factor credits)");
-            return vox + (voxFil & voxBand);
+            voxFil.BoolIntersect(voxBand);
+            voxBand.Dispose();
+            vox.BoolAdd(voxFil);
+            voxFil.Dispose();
+            return vox;
         }
     }
 }

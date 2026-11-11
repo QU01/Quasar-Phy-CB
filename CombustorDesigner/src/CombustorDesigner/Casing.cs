@@ -33,23 +33,27 @@ namespace CombustorDesigner
 
             // shell: outer revolve minus the inner revolve, opened at both
             // ends by extending the inner solid axially
+            // D-392: in-place booleans with the tool disposed at once - the
+            // operator form left every intermediate native grid to the
+            // finalizer and this part alone peaked at 10.6 GiB RSS at the
+            // 8 kg/s scale (lattice-rendered revolutions, 0.8 mm).
             Voxels vox = LatticeUtils.voxRevolveProfileZ(p.Casing.Profile, 1,
                                                          fT);
-            vox -= LatticeUtils.voxRevolveProfileZ(p.Casing.Profile, 1, 0f,
-                                                   fLipMm + 2f);
+            LatticeUtils.Sub(vox, LatticeUtils.voxRevolveProfileZ(
+                p.Casing.Profile, 1, 0f, fLipMm + 2f));
 
             float fZ0 = p.Casing.Profile[0][0];
             float fZ1 = p.Casing.Profile[p.Casing.Profile.Length - 1][0];
 
             // bolted end flanges
-            vox += voxFlange(p, fZ0, bForward: true);
-            vox += voxFlange(p, fZ1, bForward: false);
+            LatticeUtils.Add(vox, voxFlange(p, fZ0, bForward: true));
+            LatticeUtils.Add(vox, voxFlange(p, fZ1, bForward: false));
 
             // optional head-end closure plate (only when declared: a can
             // casing that feeds through the head annulus has none, and
             // inventing one would falsify the drainability verdict)
             if (p.Casing.HeadPlateTMm > 0f)
-                vox += voxHeadPlate(p, fT);
+                LatticeUtils.Add(vox, voxHeadPlate(p, fT));
 
             // igniter boss + through bore
             foreach (HoleRowParams row in p.HoleRows)
@@ -57,8 +61,10 @@ namespace CombustorDesigner
                 if (!row.bIsIgniter())
                     continue;
                 float fDBoss = MathF.Max(2.5f * row.DMm, row.DMm + 6f);
-                vox += voxRadialBoss(p, row.ZMm, row.Phi0Deg, fDBoss);
-                vox -= voxRadialBore(p, row.ZMm, row.Phi0Deg, row.DMm);
+                LatticeUtils.Add(vox, voxRadialBoss(p, row.ZMm, row.Phi0Deg,
+                                                    fDBoss));
+                LatticeUtils.Sub(vox, voxRadialBore(p, row.ZMm, row.Phi0Deg,
+                                                    row.DMm));
                 Library.Log($"Casing: igniter boss at z = {row.ZMm:0.#} mm, "
                           + $"bore d = {row.DMm:0.##} mm");
             }
@@ -69,9 +75,10 @@ namespace CombustorDesigner
             {
                 DrainPortParams o = aPorts[i];
                 if (o.bBoss)
-                    vox += voxRadialBoss(p, o.ZMm, o.PhiDeg,
-                                         MathF.Max(2f * o.DMm, o.DMm + 5f));
-                vox -= voxRadialBore(p, o.ZMm, o.PhiDeg, o.DMm);
+                    LatticeUtils.Add(vox, voxRadialBoss(p, o.ZMm, o.PhiDeg,
+                        MathF.Max(2f * o.DMm, o.DMm + 5f)));
+                LatticeUtils.Sub(vox, voxRadialBore(p, o.ZMm, o.PhiDeg,
+                                                    o.DMm));
                 Library.Log($"Casing: drain port {i + 1}/{aPorts.Count} at "
                           + $"z = {o.ZMm:0.#} mm, phi = {o.PhiDeg:0.#} deg, "
                           + $"d = {o.DMm:0.##} mm");
@@ -120,12 +127,12 @@ namespace CombustorDesigner
 
             Voxels vox = LatticeUtils.voxCylinderZ(
                 new Vector3(0f, 0f, fZBase), fRF, fFT);
-            vox -= LatticeUtils.voxCylinderZ(
-                new Vector3(0f, 0f, fZBase - 1f), fRIn, fFT + 2f);
+            LatticeUtils.Sub(vox, LatticeUtils.voxCylinderZ(
+                new Vector3(0f, 0f, fZBase - 1f), fRIn, fFT + 2f));
             float fRBolt = fRO + 0.5f * (fRF - fRO);
-            vox -= LatticeUtils.voxBoltCircle(fRBolt, p.Casing.FlangeBoltCount,
-                                              p.Casing.FlangeBoltDMm,
-                                              fZBase, fFT);
+            LatticeUtils.Sub(vox, LatticeUtils.voxBoltCircle(
+                fRBolt, p.Casing.FlangeBoltCount, p.Casing.FlangeBoltDMm,
+                fZBase, fFT));
             return vox;
         }
 
@@ -141,9 +148,9 @@ namespace CombustorDesigner
                 new Vector3(0f, 0f, fZ0 - fTP), fR, fTP);
             float fBore = MathF.Max(0.5f * Liner.fSeatDMm(p), 2f);
             foreach (Vector3 vecPos in Liner.aInjectorPositions(p))
-                vox -= LatticeUtils.voxCylinderZ(
+                LatticeUtils.Sub(vox, LatticeUtils.voxCylinderZ(
                     new Vector3(vecPos.X, vecPos.Y, fZ0 - fTP - 1f),
-                    fBore, fTP + 2f);
+                    fBore, fTP + 2f));
             return vox;
         }
 

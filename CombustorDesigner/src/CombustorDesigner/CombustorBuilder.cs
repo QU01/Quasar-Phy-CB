@@ -105,6 +105,7 @@ namespace CombustorDesigner
             foreach (string s in p.Warnings)
                 Library.Log("WARN  " + s);
             int nWarnAlready = p.Warnings.Count;
+            LatticeUtils.fVoxelSizeMm = p.VoxelSizeMm;
 
             string strDir = Path.GetDirectoryName(strOutputStl) ?? ".";
             string strBase = Path.GetFileNameWithoutExtension(strOutputStl);
@@ -143,11 +144,16 @@ namespace CombustorDesigner
                               + "skipped (it is optional).");
                     continue;
                 }
+                long lMsBuilt = oWatch.ElapsedMilliseconds;
                 vox.CalculateProperties(out float fVol, out BBox3 oBB);
                 string strPartStl = Path.Combine(
                     strDir, $"{strBase}_{strName}.stl");
-                new Mesh(vox).SaveToStlFile(strPartStl);
+                long lMsMesh = SaveStl(vox, strPartStl, oWatch);
                 float fSecs = (oWatch.ElapsedMilliseconds - lMs0) / 1000f;
+                Library.Log($"TIMING part {strName}: build "
+                          + $"{(lMsBuilt - lMs0) / 1000f:0.0} s, properties "
+                          + $"{(lMsMesh - lMsBuilt) / 1000f:0.0} s, mesh+STL "
+                          + $"{(oWatch.ElapsedMilliseconds - lMsMesh) / 1000f:0.0} s");
                 Library.Log($"Part {strName}: {fVol:F0} mm^3 in {fSecs:F1} s "
                           + $"-> {strPartStl}");
 
@@ -180,11 +186,25 @@ namespace CombustorDesigner
                         ? (object)oOver.fFrac : null },
                 });
 
-                if (strFilter == null)
-                    voxAssembly = voxAssembly == null
-                        ? vox : voxAssembly + vox;
+                // D-392: the assembly grows IN PLACE and each part's grid is
+                // released as soon as it is merged (the first part becomes
+                // the assembly itself). Streaming then really keeps one part
+                // plus the assembly in memory.
                 if (bShowViewer)
                     Library.oViewer().Add(vox, nPart++ % 4);
+                if (strFilter == null)
+                {
+                    if (voxAssembly == null)
+                        voxAssembly = vox;
+                    else
+                    {
+                        voxAssembly.BoolAdd(vox);
+                        if (!bShowViewer)
+                            vox.Dispose();
+                    }
+                }
+                else if (!bShowViewer)
+                    vox.Dispose();
             }
 
             if (strFilter != null)
@@ -195,9 +215,12 @@ namespace CombustorDesigner
             }
 
             // -- assembly (inspection only) -------------------------------
+            long lMsAsm = oWatch.ElapsedMilliseconds;
             voxAssembly.CalculateProperties(out float fVolAsm,
                                             out BBox3 oBBAsm);
-            new Mesh(voxAssembly).SaveToStlFile(strOutputStl);
+            SaveStl(voxAssembly, strOutputStl, oWatch);
+            Library.Log($"TIMING assembly mesh+STL: "
+                      + $"{(oWatch.ElapsedMilliseconds - lMsAsm) / 1000f:0.0} s");
             Library.Log($"Exported STL: {strOutputStl} ({fVolAsm:F0} mm^3) - "
                       + strAssemblyTag.ToUpperInvariant()
                       + ". The parts interpenetrate at their seats on "
@@ -216,9 +239,12 @@ namespace CombustorDesigner
 
             // -- DfAM re-verification on the built voxels -----------------
             DfamVoxelReport oDfam = null;
+            long lMsDfam = oWatch.ElapsedMilliseconds;
             try
             {
                 oDfam = DfamVoxelCheck.Run(voxAssembly, p, aOverhang);
+                Library.Log($"TIMING DfAM voxel re-verification: "
+                          + $"{(oWatch.ElapsedMilliseconds - lMsDfam) / 1000f:0.0} s");
             }
             catch (Exception e)
             {
@@ -233,7 +259,10 @@ namespace CombustorDesigner
             try
             {
                 string strVdb = Path.Combine(strDir, strBase + "_field.vdb");
+                long lMsVdb = oWatch.ElapsedMilliseconds;
                 voxAssembly.SaveToVdbFile(strVdb);
+                Library.Log($"TIMING voxel field export: "
+                          + $"{(oWatch.ElapsedMilliseconds - lMsVdb) / 1000f:0.0} s");
                 string strVdbLiner = null;
                 oField["format"] = "openvdb-sdf-narrowband";
                 oField["units"] = "mm";
@@ -266,6 +295,27 @@ namespace CombustorDesigner
                 Library.Log("WARN  " + p.Warnings[i]);
 
             WriteReport(p, strDir, aParts, oEff, oDfam, oField);
+            Library.Log($"TIMING total: {oWatch.ElapsedMilliseconds / 1000f:0.0} s");
+        }
+
+        /// <summary>Meshes the field and writes the binary STL, releasing
+        /// the native mesh right away (D-392). Returns the stopwatch
+        /// reading at the start, and logs meshing and writing apart.
+        /// </summary>
+        static long SaveStl(Voxels vox, string strPath,
+                            System.Diagnostics.Stopwatch oWatch)
+        {
+            long lMs0 = oWatch.ElapsedMilliseconds;
+            using (Mesh msh = new Mesh(vox))
+            {
+                long lMs1 = oWatch.ElapsedMilliseconds;
+                msh.SaveToStlFile(strPath);
+                Library.Log($"TIMING STL {Path.GetFileName(strPath)}: mesh "
+                          + $"{(lMs1 - lMs0) / 1000f:0.0} s "
+                          + $"({msh.nTriangleCount()} triangles), write "
+                          + $"{(oWatch.ElapsedMilliseconds - lMs1) / 1000f:0.0} s");
+            }
+            return lMs0;
         }
 
         // -- part list (lazy: one part in memory at a time) ---------------

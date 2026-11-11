@@ -72,6 +72,14 @@ namespace CombustorDesigner
         readonly BBox3 m_oBounds;
         readonly int m_nHoles;
 
+        // D-392: per-row tables of the hole centre and axis for every hole
+        // index j the 3x3 neighbourhood search can reach, built with the
+        // very expressions fSignedDistance used to evaluate per sample, so
+        // the field is bit-for-bit the same and ~3x cheaper to evaluate.
+        readonly int[] m_anJMin;
+        readonly Vector3[][] m_aavecC;
+        readonly Vector3[][] m_aavecA;
+
         /// <summary>Total number of holes in the field (reported to the log
         /// and to dfam_report.json - with ~2000 holes "open holes" becomes a
         /// quality requirement, EstadoDelArte 4.4).</summary>
@@ -219,6 +227,26 @@ namespace CombustorDesigner
             Array.Sort(m_afRowZ, m_aRows);
             m_nHoles = nHoles;
 
+            m_anJMin = new int[m_aRows.Length];
+            m_aavecC = new Vector3[m_aRows.Length][];
+            m_aavecA = new Vector3[m_aRows.Length][];
+            for (int i = 0; i < m_aRows.Length; i++)
+            {
+                Row row = m_aRows[i];
+                int jMin = (int)MathF.Floor((-MathF.PI - row.fPhi0)
+                                            / row.fDPhi) - 2;
+                int jMax = (int)MathF.Ceiling((MathF.PI - row.fPhi0)
+                                              / row.fDPhi) + 2;
+                m_anJMin[i] = jMin;
+                m_aavecC[i] = new Vector3[jMax - jMin + 1];
+                m_aavecA[i] = new Vector3[jMax - jMin + 1];
+                for (int j = jMin; j <= jMax; j++)
+                {
+                    HoleFrame(row, j, out m_aavecC[i][j - jMin],
+                              out m_aavecA[i][j - jMin]);
+                }
+            }
+
             float fMaxHalf = 0f;
             foreach (Row r in m_aRows)
                 fMaxHalf = MathF.Max(fMaxHalf, r.fHalfLen);
@@ -233,6 +261,144 @@ namespace CombustorDesigner
             m_oBounds = LatticeUtils.oBBox(
                 new Vector3(-fRad, -fRad, fZLo - 1f),
                 new Vector3(fRad, fRad, fZHi + 1f));
+        }
+
+        /// <summary>
+        /// The whole field as ONE voxel field, ready to subtract.
+        ///
+        /// D-392 (17.1-03): the SAME implicit, evaluated only where it can
+        /// matter. Rendering it over m_oBounds evaluated fSignedDistance on
+        /// every voxel of the +-r_max square of the liner (118 s for the
+        /// 39 064 holes of the 8 kg/s liner at 0.8 mm), although the holes
+        /// live in a thin annular shell around the wall. Here the shell is
+        /// covered by axis-aligned tiles: one z-slab at a time, the (z, r)
+        /// extent of every row that reaches the slab is padded by
+        /// fPadVoxels voxels (wider than the narrow band) and only the xy
+        /// tiles that touch that annulus are rendered, with half a voxel of
+        /// overlap between neighbours. Every voxel where the old render
+        /// stored a value inside the band is evaluated with the identical
+        /// function, so the subtracted field is the same; outside the tiles
+        /// the old render had only background (tiles are also clipped to
+        /// m_oBounds, the box the old render used). Not a lattice: PicoGK
+        /// rasterizes sub-voxel beams differently from the implicit (the
+        /// KJ66 liner lost 3.5 % more volume that way), so it is not
+        /// equivalent.
+        /// </summary>
+        public Voxels voxRender(float fVoxelMm, out string strHow)
+        {
+            if (m_aRows.Length == 0)
+            {
+                strHow = "empty field";
+                return new Voxels();
+            }
+            const float fPadVoxels = 4f;
+            // thin in xy (the shell is ~10 mm thick radially), tall in z
+            // (rows follow each other every few mm along the wall)
+            const int nTileVoxels = 10;
+            const int nTileZVoxels = 80;
+            float fPad = fPadVoxels * fVoxelMm;
+            float fTile = nTileVoxels * fVoxelMm;
+            float fTileZ = nTileZVoxels * fVoxelMm;
+            float fLap = 0.5f * fVoxelMm;
+
+            // largest perpendicular reach of a section: the conical gas
+            // side, and the 45-degree apex of a teardrop
+            float fRSec = m_fR * (m_bConical ? m_fConeExp : 1f);
+            if (m_bTeardrop)
+                fRSec *= MathF.Sqrt(2f);
+
+            int n = m_aRows.Length;
+            var afZLo = new float[n];
+            var afZHi = new float[n];
+            var afRLo = new float[n];
+            var afRHi = new float[n];
+            float fZMin = float.MaxValue, fZMax = float.MinValue;
+            float fRAll = 0f;
+            for (int i = 0; i < n; i++)
+            {
+                Row row = m_aRows[i];
+                float fDz = row.fHalfLen * MathF.Abs(row.fAz) + fRSec + fPad;
+                float fDr = row.fHalfLen * MathF.Abs(row.fAr) + fRSec + fPad
+                          + fRSec * fRSec / MathF.Max(row.fRMid, 1f);
+                afZLo[i] = row.fZc - fDz;
+                afZHi[i] = row.fZc + fDz;
+                afRLo[i] = MathF.Max(row.fRMid - fDr, 0f);
+                afRHi[i] = row.fRMid + fDr;
+                fZMin = MathF.Min(fZMin, afZLo[i]);
+                fZMax = MathF.Max(fZMax, afZHi[i]);
+                fRAll = MathF.Max(fRAll, afRHi[i]);
+            }
+
+            int nXY = (int)MathF.Ceiling(2f * fRAll / fTile);
+            var aBoxes = new List<BBox3>();
+            double dEvalMm3 = 0.0;
+            for (float fZ0 = fZMin; fZ0 < fZMax; fZ0 += fTileZ)
+            {
+                float fZ1 = fZ0 + fTileZ;
+                float fRLo = float.MaxValue, fRHi = -1f;
+                for (int i = 0; i < n; i++)
+                {
+                    if (afZHi[i] < fZ0 || afZLo[i] > fZ1)
+                        continue;
+                    fRLo = MathF.Min(fRLo, afRLo[i]);
+                    fRHi = MathF.Max(fRHi, afRHi[i]);
+                }
+                if (fRHi < 0f)
+                    continue;
+
+                for (int ix = 0; ix < nXY; ix++)
+                {
+                    float fX0 = -fRAll + ix * fTile, fX1 = fX0 + fTile;
+                    for (int iy = 0; iy < nXY; iy++)
+                    {
+                        float fY0 = -fRAll + iy * fTile, fY1 = fY0 + fTile;
+                        // nearest / farthest distance of the tile to the axis
+                        float fNx = MathF.Max(0f, MathF.Max(fX0, -fX1));
+                        float fNy = MathF.Max(0f, MathF.Max(fY0, -fY1));
+                        float fFx = MathF.Max(MathF.Abs(fX0), MathF.Abs(fX1));
+                        float fFy = MathF.Max(MathF.Abs(fY0), MathF.Abs(fY1));
+                        float fNear = MathF.Sqrt(fNx * fNx + fNy * fNy);
+                        float fFar = MathF.Sqrt(fFx * fFx + fFy * fFy);
+                        if (fNear > fRHi || fFar < fRLo)
+                            continue;
+                        // never outside the box the old render used
+                        Vector3 vecLo = Vector3.Max(m_oBounds.vecMin,
+                            new Vector3(fX0 - fLap, fY0 - fLap, fZ0 - fLap));
+                        Vector3 vecHi = Vector3.Min(m_oBounds.vecMax,
+                            new Vector3(fX1 + fLap, fY1 + fLap, fZ1 + fLap));
+                        if (vecHi.X <= vecLo.X || vecHi.Y <= vecLo.Y
+                            || vecHi.Z <= vecLo.Z)
+                            continue;
+                        aBoxes.Add(LatticeUtils.oBBox(vecLo, vecHi));
+                        Vector3 vecE = vecHi - vecLo;
+                        dEvalMm3 += (double)vecE.X * vecE.Y * vecE.Z;
+                    }
+                }
+            }
+
+            double dBox = (double)(m_oBounds.vecMax.X - m_oBounds.vecMin.X)
+                        * (m_oBounds.vecMax.Y - m_oBounds.vecMin.Y)
+                        * (m_oBounds.vecMax.Z - m_oBounds.vecMin.Z);
+            if (dEvalMm3 >= 0.5 * dBox)
+            {
+                // a small liner: the shell IS most of the box
+                strHow = $"implicit over the full box ({dBox / 1e6:0.0} dm3; "
+                       + "the shell tiles would cover "
+                       + $"{100.0 * dEvalMm3 / dBox:0} % of it)";
+                return new Voxels(this, m_oBounds);
+            }
+
+            // every tile is rendered into the SAME field: the overlaps
+            // receive the identical value twice and nothing is unioned (a
+            // field per tile plus unions gave the same triangles, slower)
+            Voxels vox = new Voxels();
+            foreach (BBox3 oBox in aBoxes)
+                vox.RenderImplicit(this, oBox);
+            string strJoin = "rendered into one field";
+            strHow = $"implicit over {aBoxes.Count} shell tiles of "
+                   + $"{fTile:0.##} x {fTile:0.##} x {fTileZ:0.##} mm, {strJoin} ({dEvalMm3 / 1e6:0.0} of "
+                   + $"{dBox / 1e6:0.0} dm3 of the full box evaluated)";
+            return vox;
         }
 
         /// <summary>
@@ -253,6 +419,8 @@ namespace CombustorDesigner
             if (i0 < 0) i0 = ~i0;
 
             float fBest = 1e6f;
+            bool bPhi = false;
+            float fPhi = 0f;
             for (int i = i0 - 1; i <= i0 + 1; i++)
             {
                 if (i < 0 || i >= m_aRows.Length)
@@ -261,18 +429,26 @@ namespace CombustorDesigner
                 if (MathF.Abs(fZ - row.fZc) > m_fReach + row.fHalfLen)
                     continue;
 
-                float fPhi = MathF.Atan2(vec.Y, vec.X);
+                if (!bPhi)
+                {
+                    fPhi = MathF.Atan2(vec.Y, vec.X);
+                    bPhi = true;
+                }
                 float fJ = (fPhi - row.fPhi0) / row.fDPhi;
                 int j0 = (int)MathF.Round(fJ);
+                Vector3[] aC = m_aavecC[i], aA = m_aavecA[i];
+                int jMin = m_anJMin[i];
                 for (int j = j0 - 1; j <= j0 + 1; j++)
                 {
-                    float fPhiH = row.fPhi0 + j * row.fDPhi;
-                    float fCos = MathF.Cos(fPhiH), fSin = MathF.Sin(fPhiH);
-                    Vector3 vecRad = new Vector3(fCos, fSin, 0f);
-                    Vector3 vecC = vecRad * row.fRMid
-                                 + new Vector3(0f, 0f, row.fZc);
-                    Vector3 vecA = vecRad * row.fAr
-                                 + new Vector3(0f, 0f, row.fAz);
+                    Vector3 vecC, vecA;
+                    int k = j - jMin;
+                    if ((uint)k < (uint)aC.Length)
+                    {
+                        vecC = aC[k];
+                        vecA = aA[k];
+                    }
+                    else
+                        HoleFrame(row, j, out vecC, out vecA);
 
                     Vector3 vecD = vec - vecC;
                     float fT = Vector3.Dot(vecD, vecA);
@@ -301,6 +477,19 @@ namespace CombustorDesigner
                 }
             }
             return fBest;
+        }
+
+        /// <summary>Centre (mid-wall) and axis of hole j of a row - the
+        /// expressions of the original per-sample evaluation, unchanged.
+        /// </summary>
+        static void HoleFrame(in Row row, int j, out Vector3 vecC,
+                              out Vector3 vecA)
+        {
+            float fPhiH = row.fPhi0 + j * row.fDPhi;
+            float fCos = MathF.Cos(fPhiH), fSin = MathF.Sin(fPhiH);
+            Vector3 vecRad = new Vector3(fCos, fSin, 0f);
+            vecC = vecRad * row.fRMid + new Vector3(0f, 0f, row.fZc);
+            vecA = vecRad * row.fAr + new Vector3(0f, 0f, row.fAz);
         }
 
         /// <summary>

@@ -16,6 +16,14 @@
 //                        the convex hull of the circle and a 45-degree apex,
 //                        extruded along the hole axis as a watertight prism.
 //
+// D-392 (17.1-03): a lattice beam is rendered over its whole bounding box,
+// padded by the radius in all three axes, so a revolution or cylinder of a
+// few hundred mm costs 10^8-10^10 voxel evaluations at 0.8 mm. Above
+// dLatticeBudgetVoxels voxCylinderZ and voxRevolveProfileZ build the same
+// solid as a watertight revolved mesh (mshRevolveZ) instead; below it the
+// historical lattice is kept bit for bit. Add/Sub do the booleans in place
+// and dispose the tool so no native grid waits for the finalizer.
+//
 // All lengths are millimetres. Z is the machine axis.
 //
 
@@ -48,11 +56,161 @@ namespace CombustorDesigner
         public static Voxels voxCylinderZ(Vector3 vecBaseBottom, float fR,
                                           float fL)
         {
-            Lattice lat = new Lattice();
-            lat.AddBeam(vecBaseBottom, fR,
-                        vecBaseBottom + new Vector3(0, 0, fL), fR,
-                        false);
-            return new Voxels(lat);
+            // 17.1-03 / D-392: PicoGK renders a beam by evaluating its SDF
+            // over the whole beam bounding box, which carries +-r in Z too:
+            // a flange of r = 280 mm and 4 mm thick costs a 560^3 mm box.
+            // Beyond dLatticeBudgetVoxels the cylinder is built as a
+            // watertight revolved MESH (voxelized over its surface only;
+            // same solid, polygon sag under fRevolveSagMm). Below it the
+            // historical lattice beam is kept bit for bit (KJ66, cups).
+            if (dBeamBoxVoxels(vecBaseBottom.Z, fR, vecBaseBottom.Z + fL, fR)
+                <= dLatticeBudgetVoxels)
+            {
+                Lattice lat = new Lattice();
+                lat.AddBeam(vecBaseBottom, fR,
+                            vecBaseBottom + new Vector3(0, 0, fL), fR,
+                            false);
+                return new Voxels(lat);
+            }
+            if (MathF.Abs(fL) < 1e-6f || fR <= 0f)
+                return new Voxels();
+            Mesh msh = mshRevolveZ(
+                new[] { vecBaseBottom.Z, vecBaseBottom.Z + fL },
+                new[] { fR, fR }, vecBaseBottom.X, vecBaseBottom.Y);
+            Voxels vox = new Voxels(msh);
+            msh.Dispose();
+            return vox;
+        }
+
+        /// <summary>Voxel size of the running build (mm); set once by
+        /// CombustorBuilder before any part is built. Only used to price a
+        /// lattice beam against dLatticeBudgetVoxels.</summary>
+        public static float fVoxelSizeMm = 0.8f;
+
+        /// <summary>
+        /// D-392: largest lattice render (voxels evaluated, summed over the
+        /// beams of one solid) still built as a lattice. Every KJ66 solid
+        /// and every cup of the scale class stays well under it (at most ~12 M at
+        /// 1.2 mm), so they keep the historical geometry bit for bit; the
+        /// liner, dome and casing revolutions of the 5-25 kg/s class at 0.8
+        /// mm cost 10^8-10^10 and switch to the revolved mesh.
+        /// </summary>
+        public const double dLatticeBudgetVoxels = 5e7;
+
+        /// <summary>Voxels PicoGK evaluates to render one flat-capped beam
+        /// along Z: its bounding box, which is padded by the radius in all
+        /// three axes.</summary>
+        public static double dBeamBoxVoxels(float fZa, float fRa, float fZb,
+                                            float fRb)
+        {
+            double dR = Math.Max(Math.Max(fRa, fRb), 0f);
+            double dS = 2.0 * dR;
+            double dV = Math.Max(fVoxelSizeMm, 1e-3f);
+            return dS * dS * (Math.Abs(fZb - fZa) + dS) / (dV * dV * dV);
+        }
+
+        /// <summary>In-place union vox += voxTool; the tool is disposed
+        /// (D-392: no native grid is left to the finalizer). Returns vox.
+        /// </summary>
+        public static Voxels Add(Voxels vox, Voxels voxTool)
+        {
+            if (voxTool == null)
+                return vox;
+            if (!voxTool.bIsEmpty())
+                vox.BoolAdd(voxTool);
+            voxTool.Dispose();
+            return vox;
+        }
+
+        /// <summary>In-place difference vox -= voxTool; the tool is
+        /// disposed. Returns vox.</summary>
+        public static Voxels Sub(Voxels vox, Voxels voxTool)
+        {
+            if (voxTool == null)
+                return vox;
+            if (!voxTool.bIsEmpty())
+                vox.BoolSubtract(voxTool);
+            voxTool.Dispose();
+            return vox;
+        }
+
+        /// <summary>Largest chord sag (mm) the polygonal revolutions may
+        /// show against the true circle: two orders of magnitude under the
+        /// finest voxel used (0.3 mm), so the voxel field cannot tell the
+        /// polygon from the circle.</summary>
+        public const float fRevolveSagMm = 0.005f;
+
+        /// <summary>Angular segments of a revolved mesh whose largest radius
+        /// is fRMaxMm, so the inscribed polygon stays within fRevolveSagMm
+        /// of the circle. Multiple of 8 (symmetric about both axes).</summary>
+        public static int nRevolveSegments(float fRMaxMm)
+        {
+            if (!(fRMaxMm > fRevolveSagMm))
+                return 48;
+            double dHalf = Math.Acos(1.0 - fRevolveSagMm / fRMaxMm);
+            int n = (int)Math.Ceiling(Math.PI / dHalf);
+            n = Math.Clamp(n, 48, 4096);
+            return (n + 7) / 8 * 8;
+        }
+
+        /// <summary>
+        /// Watertight solid of revolution about the axis parallel to Z
+        /// through (fCx, fCy): the meridian polyline (aZ[i], aR[i]), z
+        /// ascending and r > 0, revolved into rings joined by quads, with a
+        /// flat disc cap at each end. A radius step at constant z becomes
+        /// the flat annular face it represents. Outward winding (CCW seen
+        /// from outside).
+        /// </summary>
+        public static Mesh mshRevolveZ(IReadOnlyList<float> aZ,
+                                       IReadOnlyList<float> aR,
+                                       float fCx = 0f, float fCy = 0f)
+        {
+            int nRings = aZ.Count;
+            float fRMax = 0f;
+            for (int i = 0; i < nRings; i++)
+                fRMax = MathF.Max(fRMax, aR[i]);
+            int nSeg = nRevolveSegments(fRMax);
+            var afC = new float[nSeg];
+            var afS = new float[nSeg];
+            for (int k = 0; k < nSeg; k++)
+            {
+                double dA = 2.0 * Math.PI * k / nSeg;
+                afC[k] = (float)Math.Cos(dA);
+                afS[k] = (float)Math.Sin(dA);
+            }
+
+            Mesh msh = new Mesh();
+            var anRing = new int[nRings][];
+            for (int i = 0; i < nRings; i++)
+            {
+                anRing[i] = new int[nSeg];
+                for (int k = 0; k < nSeg; k++)
+                    anRing[i][k] = msh.nAddVertex(new Vector3(
+                        fCx + aR[i] * afC[k], fCy + aR[i] * afS[k], aZ[i]));
+            }
+            // side walls: (a, b, c) with a->b tangential (+phi) and b->c
+            // meridional (+z or radial) gives the outward normal
+            for (int i = 0; i + 1 < nRings; i++)
+            {
+                int[] a0 = anRing[i], a1 = anRing[i + 1];
+                for (int k = 0; k < nSeg; k++)
+                {
+                    int k1 = (k + 1) % nSeg;
+                    msh.nAddTriangle(a0[k], a0[k1], a1[k1]);
+                    msh.nAddTriangle(a0[k], a1[k1], a1[k]);
+                }
+            }
+            // end caps: bottom faces -Z, top faces +Z
+            int nBot = msh.nAddVertex(new Vector3(fCx, fCy, aZ[0]));
+            int nTop = msh.nAddVertex(new Vector3(fCx, fCy, aZ[nRings - 1]));
+            int[] aB = anRing[0], aT = anRing[nRings - 1];
+            for (int k = 0; k < nSeg; k++)
+            {
+                int k1 = (k + 1) % nSeg;
+                msh.nAddTriangle(nBot, aB[k1], aB[k]);
+                msh.nAddTriangle(nTop, aT[k], aT[k1]);
+            }
+            return msh;
         }
 
         /// <summary>Solid cylinder along the local +Z of a LocalFrame,
@@ -178,24 +336,80 @@ namespace CombustorDesigner
                 aR.Add(aR[aR.Count - 1]);
             }
 
-            Lattice lat = new Lattice();
+            // 17.1-03 / D-392: one lattice beam per segment costs a box of
+            // +-r in all three axes per beam (the 8 kg/s liner walls took
+            // 98 s and the 48-segment dome 246 s at 0.8 mm). Under
+            // dLatticeBudgetVoxels the historical lattice is kept bit for
+            // bit; above it the SAME union of conical frustums is built as
+            // ONE watertight revolved mesh, voxelized over its surface.
             int nBeams = 0;
+            double dCost = 0.0;
             for (int i = 0; i + 1 < aZ.Count; i++)
             {
                 if (MathF.Abs(aZ[i + 1] - aZ[i]) < 1e-6f)
                     continue;                  // flat annular face
-                float fRa = aR[i], fRb = aR[i + 1];
-                if (fRa <= fRMinMm && fRb <= fRMinMm)
+                if (aR[i] <= fRMinMm && aR[i + 1] <= fRMinMm)
                     continue;
-                lat.AddBeam(new Vector3(0f, 0f, aZ[i]),
-                            MathF.Max(fRa, fRMinMm),
-                            new Vector3(0f, 0f, aZ[i + 1]),
-                            MathF.Max(fRb, fRMinMm), false);
                 nBeams++;
+                dCost += dBeamBoxVoxels(aZ[i], aR[i], aZ[i + 1], aR[i + 1]);
             }
             if (nBeams == 0)
                 return new Voxels();
-            return new Voxels(lat);
+
+            if (dCost <= dLatticeBudgetVoxels)
+            {
+                Lattice lat = new Lattice();
+                for (int i = 0; i + 1 < aZ.Count; i++)
+                {
+                    if (MathF.Abs(aZ[i + 1] - aZ[i]) < 1e-6f)
+                        continue;              // flat annular face
+                    float fRa = aR[i], fRb = aR[i + 1];
+                    if (fRa <= fRMinMm && fRb <= fRMinMm)
+                        continue;
+                    lat.AddBeam(new Vector3(0f, 0f, aZ[i]),
+                                MathF.Max(fRa, fRMinMm),
+                                new Vector3(0f, 0f, aZ[i + 1]),
+                                MathF.Max(fRb, fRMinMm), false);
+                }
+                return new Voxels(lat);
+            }
+
+            if (aZ[aZ.Count - 1] < aZ[0])
+            {
+                aZ.Reverse();
+                aR.Reverse();
+            }
+            var aZm = new List<float>(aZ.Count);
+            var aRm = new List<float>(aZ.Count);
+            for (int i = 0; i < aZ.Count; i++)
+            {
+                float fR = MathF.Max(aR[i], fRMinMm);
+                if (aZm.Count > 0
+                    && MathF.Abs(aZ[i] - aZm[aZm.Count - 1]) < 1e-6f
+                    && MathF.Abs(fR - aRm[aRm.Count - 1]) < 1e-6f)
+                    continue;                  // repeated vertex
+                aZm.Add(aZ[i]);
+                aRm.Add(fR);
+            }
+            // a radius step at either END is not a face of the lattice
+            // union (its first/last frustum starts at the inner point):
+            // drop it so the end cap is never folded over itself
+            while (aZm.Count > 2 && MathF.Abs(aZm[1] - aZm[0]) < 1e-6f)
+            {
+                aZm.RemoveAt(0);
+                aRm.RemoveAt(0);
+            }
+            while (aZm.Count > 2
+                   && MathF.Abs(aZm[aZm.Count - 1] - aZm[aZm.Count - 2])
+                      < 1e-6f)
+            {
+                aZm.RemoveAt(aZm.Count - 1);
+                aRm.RemoveAt(aRm.Count - 1);
+            }
+            Mesh msh = mshRevolveZ(aZm, aRm);
+            Voxels vox = new Voxels(msh);
+            msh.Dispose();
+            return vox;
         }
 
         /// <summary>
