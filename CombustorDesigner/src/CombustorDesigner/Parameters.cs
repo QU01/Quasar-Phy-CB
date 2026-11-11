@@ -154,12 +154,25 @@ namespace CombustorDesigner
         public float ZMm = float.NaN;        // NaN => the dome plane
         public float ChordMm = 0f;           // 0 => derived from the span
         public bool MonolithicWithDome = false;
+        /// <summary>Key that gave NVanes ("n_vanes", "n_blades", "count" or
+        /// null). A scale contract must give n_vanes explicitly: its
+        /// `count` is the number of CUPS, not of vanes.</summary>
+        public string NVanesKey = null;
+        /// <summary>`swirler.count` exactly as read (NaN = absent). In the
+        /// annular_5_25 class it is the number of swirl cups.</summary>
+        public double CupCountRaw = double.NaN;
+        public int CupCount = 0;
+        public float AEachMm2 = float.NaN;   // swirler.A_sw_each_mm2
+        public float ATotalMm2 = float.NaN;  // swirler.A_sw_total_mm2
     }
 
     public sealed class InjectorParams
     {
         public string Type = "airblast";     // airblast|simplex|vaporizer|micromix
         public int Count = 1;
+        public double CountRaw = double.NaN;  // `injectors.count` as read
+        public double NTubesRaw = double.NaN; // `injectors.n_tubes` as read
+        public bool bRingGiven = false;       // ring_r_mm present and finite
         public float ALR = 4f;
         public float RingRMm = 0f;           // 0 => on the axis when Count==1
         public float Phi0Deg = 0f;
@@ -223,7 +236,17 @@ namespace CombustorDesigner
         public string OutputName = "PhyCB";
         public string Schema = "";
         public string Arch = "can";          // can | annular | reverse_annular
+        /// <summary>Root `operating_class` of the contract ("" = absent).
+        /// Only <see cref="SCALE_CLASS"/> switches to the swirl-cup ring;
+        /// "micro" and contracts without the key keep the historical path
+        /// whatever their architecture (a KJ66 reverse_annular included).</summary>
+        public string OperatingClass = "";
+        public const string SCALE_CLASS = "annular_5_25";
         public float VoxelSizeMm = 0.5f;
+
+        /// <summary>True for the annular_5_25 class: one swirl cup per
+        /// injector station on the dome ring.</summary>
+        public bool bScaleCups() => OperatingClass == SCALE_CLASS;
 
         public LinerParams Liner = new LinerParams();
         public CasingParams Casing = new CasingParams();
@@ -501,6 +524,168 @@ namespace CombustorDesigner
 
             if (!(Dfam.CoarseVoxelMm > 0f))
                 return "dfam coarse voxel must be > 0";
+            if (bScaleCups())
+            {
+                string strCups = strValidateScaleCups();
+                if (strCups != null)
+                    return "scale cups (operating_class " + SCALE_CLASS
+                         + "): " + strCups;
+            }
+            return null;
+        }
+
+        static bool bInteger(double d, out int n)
+        {
+            n = 0;
+            if (double.IsNaN(d) || double.IsInfinity(d)
+                || Math.Abs(d - Math.Round(d)) > 1e-9 || d < 1 || d > 4096)
+                return false;
+            n = (int)Math.Round(d);
+            return true;
+        }
+
+        static bool bFinite(float f)
+            => !float.IsNaN(f) && !float.IsInfinity(f);
+
+        /// <summary>
+        /// Geometric admission of the swirl-cup ring of the annular_5_25
+        /// class (17.1-03, D-386). Every check REJECTS with a diagnostic:
+        /// nothing is padded, clamped or truncated to make a contract fit.
+        /// Runs before any voxel is built.
+        /// </summary>
+        string strValidateScaleCups()
+        {
+            string strArch = (Arch ?? "").ToLowerInvariant();
+            if (strArch != "annular" && strArch != "reverse_annular")
+                return $"arch '{Arch}' - the class only admits annular and "
+                     + "reverse_annular";
+            if (!CombustorDesigner.Liner.bHasInnerWall(this))
+                return "the liner profile has no inner wall (r_inner = 0): "
+                     + "not an annular flame tube";
+
+            // counts: cups == injector stations (== vaporizer tubes)
+            if (!bInteger(Swirler.CupCountRaw, out int nCups))
+                return "swirler.count (number of cups) must be a finite "
+                     + "integer >= 1, got "
+                     + Swirler.CupCountRaw.ToString(CultureInfo.InvariantCulture);
+            if (!bInteger(Injectors.CountRaw, out int nInj))
+                return "injectors.count must be a finite integer >= 1, got "
+                     + Injectors.CountRaw.ToString(CultureInfo.InvariantCulture);
+            if (nCups != nInj)
+                return $"swirler.count = {nCups} cups but injectors.count = "
+                     + $"{nInj}: one cup per injector station is required";
+            if (!double.IsNaN(Injectors.NTubesRaw))
+            {
+                if (!bInteger(Injectors.NTubesRaw, out int nTubes)
+                    || nTubes != nInj)
+                    return "injectors.n_tubes = "
+                         + Injectors.NTubesRaw.ToString(CultureInfo.InvariantCulture)
+                         + $" does not match injectors.count = {nInj}";
+            }
+            Swirler.CupCount = nCups;
+            if (Swirler.NVanesKey != "n_vanes" && Swirler.NVanesKey != "n_blades")
+                return "swirler.n_vanes is required: in this class "
+                     + "swirler.count is the number of cups, not of vanes";
+            if (Swirler.NVanes < 2)
+                return $"swirler.n_vanes = {Swirler.NVanes} (needs >= 2)";
+            if (!(Swirler.Type ?? "axial").ToLowerInvariant().StartsWith("ax"))
+                return $"swirler.type '{Swirler.Type}' - only axial cups are "
+                     + "built for this class";
+
+            // ring
+            if (!Injectors.bRingGiven || !bFinite(Injectors.RingRMm)
+                || Injectors.RingRMm <= 0f)
+                return "injectors.ring_r_mm must be a finite radius > 0";
+            if (!bFinite(Injectors.Phi0Deg))
+                return "injectors.phi0_deg must be finite";
+
+            // per-cup dimensions
+            if (!bFinite(Swirler.DHubMm) || !bFinite(Swirler.DTipMm)
+                || Swirler.DHubMm <= 0f || Swirler.DTipMm <= Swirler.DHubMm)
+                return "needs 0 < swirler.d_hub_mm < swirler.d_tip_mm";
+            if (!bFinite(Swirler.VaneTMm) || Swirler.VaneTMm <= 0f)
+                return "swirler.vane_t_mm must be > 0";
+            if (!bFinite(Swirler.ChordMm) || Swirler.ChordMm <= 0f)
+                return "swirler.chord_mm must be given (> 0) for a cup";
+            if (!bFinite(Swirler.AEachMm2) || Swirler.AEachMm2 <= 0f)
+                return "swirler.A_sw_each_mm2 must be given (> 0)";
+            double dAnn = Math.PI / 4.0 * ((double)Swirler.DTipMm * Swirler.DTipMm
+                                          - (double)Swirler.DHubMm * Swirler.DHubMm);
+            if (Math.Abs(dAnn - Swirler.AEachMm2) > 1e-3 * Swirler.AEachMm2 + 1e-3)
+                return $"per-cup area pi/4 (d_tip^2 - d_hub^2) = {dAnn:0.###} "
+                     + $"mm2 differs from A_sw_each_mm2 = {Swirler.AEachMm2:0.###}";
+            if (bFinite(Swirler.ATotalMm2)
+                && Math.Abs(Swirler.ATotalMm2 - (double)nCups * Swirler.AEachMm2)
+                   > 1e-5 * Swirler.ATotalMm2 + 1e-3)
+                return $"A_sw_total_mm2 = {Swirler.ATotalMm2:0.###} is not "
+                     + $"count x A_sw_each_mm2 = {nCups * Swirler.AEachMm2:0.###}";
+
+            // dome station
+            string strDome = (Liner.DomeType ?? "").ToLowerInvariant();
+            if (!strDome.StartsWith("hemi") && !strDome.StartsWith("flat"))
+                return $"liner.dome.type '{Liner.DomeType}' - a cup ring needs "
+                     + "a hemispherical or flat dome";
+            float fZD = fDomeZMm();
+            float fPz0 = Liner.Profile[0][0];
+            float fPz1 = Liner.Profile[Liner.Profile.Length - 1][0];
+            if (MathF.Abs(fZD - fPz0) > 0.5f && MathF.Abs(fZD - fPz1) > 0.5f)
+                return $"dome plane z = {fZD:0.###} mm is not at an end of the "
+                     + $"liner profile ({fPz0:0.###} / {fPz1:0.###} mm)";
+
+            float fT = fPrintableQuietMm(Liner.TWallMm);
+            float fVox = VoxelSizeMm;
+            float fRing = Injectors.RingRMm;
+            float fRCup = CombustorDesigner.Liner.fCupOuterRMm(this);
+            float fRIn = fLinerRInnerAt(fZD);
+            float fROut = fLinerROuterAt(fZD);
+            if (fRing - fRCup < fRIn + fT + fVox)
+                return $"radial clearance: cup inner edge r = "
+                     + $"{fRing - fRCup:0.##} mm is not clear of the inner wall "
+                     + $"({fRIn:0.##} + t {fT:0.##} + voxel {fVox:0.##} mm)";
+            if (fRing + fRCup > fROut - fT - fVox)
+                return $"radial clearance: cup outer edge r = "
+                     + $"{fRing + fRCup:0.##} mm is not clear of the outer wall "
+                     + $"({fROut:0.##} - t {fT:0.##} - voxel {fVox:0.##} mm)";
+            float fPitch = 2f * fRing * MathF.Sin(MathF.PI / nCups);
+            if (fPitch < 2f * fRCup + fVox)
+                return $"angular clearance: {nCups} cups of outer radius "
+                     + $"{fRCup:0.##} mm do not fit on the ring r = "
+                     + $"{fRing:0.##} mm (chord pitch {fPitch:0.##} mm)";
+            float fRSeat = 0.5f * CombustorDesigner.Liner.fSeatDMm(this);
+            if (fRSeat + fFeatureFloorMm() > 0.5f * Swirler.DHubMm)
+                return $"the injector bore (r {fRSeat:0.##} mm) leaves no "
+                     + $"printable hub wall inside d_hub {Swirler.DHubMm:0.##} mm";
+
+            // axial extent of the cup tube and its neighbours
+            foreach (var st in CombustorDesigner.Liner.aCupStations(this))
+            {
+                if (!bFinite(st.fZLo) || !bFinite(st.fZHi) || st.fZHi <= st.fZLo)
+                    return "the dome station of a cup is undefined";
+                // a foreign leg of the flame tube inside the cup footprint
+                float fA = MathF.Max(st.fZLo, fPz0);
+                float fB = MathF.Min(st.fZHi, fPz1);
+                for (int k = 0; fB >= fA && k <= 16; k++)
+                {
+                    float fZ = fA + (fB - fA) * k / 16f;
+                    float fRi = fLinerRInnerAt(fZ), fRo = fLinerROuterAt(fZ);
+                    if (fRing - fRCup < fRi + fT + fVox
+                        || fRing + fRCup > fRo - fT - fVox)
+                        return $"the cup at phi {st.fPhiDeg:0.#} deg (z "
+                             + $"{st.fZLo:0.#}..{st.fZHi:0.#} mm) would cut a "
+                             + $"foreign leg of the flame tube at z = {fZ:0.#} mm "
+                             + $"(annulus {fRi:0.#}..{fRo:0.#} mm)";
+                }
+                // envelope: inside the casing, clear of its head plates
+                float fC0 = Casing.Profile[0][0] + Casing.HeadPlateTMm + fVox;
+                float fC1 = Casing.Profile[Casing.Profile.Length - 1][0]
+                          - Casing.HeadPlateTMm - fVox;
+                if (st.fZLo < fC0 || st.fZHi > fC1)
+                    return $"the cup at phi {st.fPhiDeg:0.#} deg spans z "
+                         + $"{st.fZLo:0.#}..{st.fZHi:0.#} mm, outside the casing "
+                         + $"envelope {fC0:0.#}..{fC1:0.#} mm";
+                if (fRing + fRCup > fCasingRAt(st.vecC.Z) - fVox)
+                    return "the cup ring does not fit inside the casing radius";
+            }
             return null;
         }
     }

@@ -47,6 +47,14 @@ namespace CombustorDesigner
                     $"'{strJsonPath}' declares schema '{p.Schema}' - this " +
                     "builder consumes 'phycb-combustor-1'");
             p.Arch = strOpt(oRoot, "arch", "can");
+            // operating class (17.1-02 additive root key). Absent or "micro"
+            // keeps the historical path; the architecture alone never
+            // reclassifies a contract.
+            p.OperatingClass = strOpt(oRoot, "operating_class", "");
+            if (p.bScaleCups())
+                p.Notes.Add("operating_class annular_5_25: swirler.count is "
+                          + "the number of swirl CUPS (one per injector "
+                          + "station), built on the injector ring.");
             if (!oRoot.TryGetProperty("_conventions", out _))
                 p.Notes.Add("the contract carries no `_conventions` key; the "
                           + "sign conventions assumed are the ones documented "
@@ -147,6 +155,15 @@ namespace CombustorDesigner
                 p.Swirler.Type = strOpt(oSw, "type", p.Swirler.Type);
                 p.Swirler.NVanes = (int)fFirst(oSw,
                     new[] { "n_vanes", "n_blades", "count" }, 0f);
+                foreach (string s in new[] { "n_vanes", "n_blades", "count" })
+                    if (oTry(oSw, s, out JsonElement eK) && bNum(eK, out _))
+                    {
+                        p.Swirler.NVanesKey = s;
+                        break;
+                    }
+                p.Swirler.CupCountRaw = dRaw(oSw, "count");
+                p.Swirler.AEachMm2 = fOpt(oSw, "A_sw_each_mm2", float.NaN);
+                p.Swirler.ATotalMm2 = fOpt(oSw, "A_sw_total_mm2", float.NaN);
                 p.Swirler.BetaDeg = fFirst(oSw,
                     new[] { "beta_deg", "vane_angle_deg" }, p.Swirler.BetaDeg);
                 p.Swirler.BetaHubDeg = fOpt(oSw, "beta_hub_deg",
@@ -170,6 +187,9 @@ namespace CombustorDesigner
                 p.Injectors.Type = strOpt(oInj, "type", p.Injectors.Type);
                 p.Injectors.Count = Math.Max(1,
                     (int)fOpt(oInj, "count", p.Injectors.Count));
+                p.Injectors.CountRaw = dRaw(oInj, "count");
+                p.Injectors.NTubesRaw = dRaw(oInj, "n_tubes");
+                p.Injectors.bRingGiven = !double.IsNaN(dRaw(oInj, "ring_r_mm"));
                 p.Injectors.ALR = fOpt(oInj, "ALR", p.Injectors.ALR);
                 p.Injectors.RingRMm = fFirst(oInj,
                     new[] { "ring_r_mm", "pitch_r_mm", "r_mm" }, 0f);
@@ -360,6 +380,20 @@ namespace CombustorDesigner
         static float fOpt(JsonElement o, string strName, float fDefault)
             => oTry(o, strName, out JsonElement e) && bNum(e, out float f)
                 ? f : fDefault;
+
+        /// <summary>A JSON number exactly as written (double, no
+        /// truncation), NaN when absent, non-numeric or non-finite. Used
+        /// for the integer counts the scale class has to VALIDATE rather
+        /// than silently cast.</summary>
+        static double dRaw(JsonElement o, string strName)
+        {
+            if (oTry(o, strName, out JsonElement e)
+                && e.ValueKind == JsonValueKind.Number
+                && e.TryGetDouble(out double d)
+                && !double.IsNaN(d) && !double.IsInfinity(d))
+                return d;
+            return double.NaN;
+        }
 
         /// <summary>Numeric read that RECORDS the fallback: used for the
         /// keys whose absence changes the printed part.</summary>

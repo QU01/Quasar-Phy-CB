@@ -59,6 +59,8 @@ namespace CombustorDesigner
         {
             if (p.Swirler.NVanes <= 0)
                 return new Voxels();
+            if (p.bScaleCups())
+                return voxScaleCups(p);
 
             string strType = (p.Swirler.Type ?? "axial").ToLowerInvariant();
             float fRHub = 0.5f * MathF.Max(p.Swirler.DHubMm, 0.5f);
@@ -98,6 +100,69 @@ namespace CombustorDesigner
             return vox;
         }
 
+        // -- swirl-cup ring (annular_5_25, 17.1-03 / D-386) ---------------
+
+        /// <summary>
+        /// One swirl cup per injector station, identical in the LOCAL frame
+        /// of its station (the vane pattern turns with the station phase):
+        /// hub of d_hub bored for the injector seat, n_vanes axial vanes of
+        /// the contract chord and angle, and a shroud tube of d_tip that
+        /// runs through the whole dome-wall crossing so all the cup air goes
+        /// through the vanes. Every cup carries the contract per-cup
+        /// dimensions - the area per cup is A_sw_each_mm2, never the total
+        /// divided again. Axis parallel to Z (vertical walls on the plate).
+        /// </summary>
+        public static Voxels voxScaleCups(CombustorParameters p)
+        {
+            float fRHub = 0.5f * p.Swirler.DHubMm;
+            float fRTip = 0.5f * p.Swirler.DTipMm;
+            float fChord = fChordMm(p);
+            float fVaneT = p.fPrintableMm(p.Swirler.VaneTMm, "swirler vane");
+            float fShroud = p.fPrintableMm(p.Liner.TWallMm, "swirler shroud");
+            float fRSeat = 0.5f * Liner.fSeatDMm(p);
+
+            Voxels vox = null;
+            var aSt = Liner.aCupStations(p);
+            foreach (Liner.CupStation st in aSt)
+            {
+                float fCx = st.vecC.X, fCy = st.vecC.Y, fZ = st.vecC.Z;
+                float fPhiSt = st.fPhiDeg * MathF.PI / 180f;
+
+                // hub, bored for the injector
+                Voxels voxCup = LatticeUtils.voxCylinderZ(
+                    new Vector3(fCx, fCy, fZ - 0.5f * fChord), fRHub, fChord);
+                // vanes in the local frame of the station
+                Voxels voxVanes = voxAxialVanes(p, fRHub, fRTip, fZ, fChord,
+                                                fVaneT, fCx, fCy, fPhiSt);
+                if (voxVanes != null && !voxVanes.bIsEmpty())
+                    voxCup += voxVanes;
+                voxCup -= LatticeUtils.voxCylinderZ(
+                    new Vector3(fCx, fCy, fZ - 0.5f * fChord - 1f), fRSeat,
+                    fChord + 2f);
+
+                // shroud tube over the full station span
+                Voxels voxShroud = LatticeUtils.voxCylinderZ(
+                    new Vector3(fCx, fCy, st.fZLo), fRTip + fShroud,
+                    st.fZHi - st.fZLo);
+                voxShroud -= LatticeUtils.voxCylinderZ(
+                    new Vector3(fCx, fCy, st.fZLo - 1f), fRTip,
+                    st.fZHi - st.fZLo + 2f);
+                voxCup += voxShroud;
+                vox = vox == null ? voxCup : vox + voxCup;
+            }
+
+            Library.Log($"Swirler: {aSt.Count} swirl cups (annular_5_25) on "
+                      + $"r = {Liner.fInjectorRingRMm(p):0.###} mm, each "
+                      + $"{p.Swirler.NVanes} axial vanes, beta "
+                      + $"{p.Swirler.BetaDeg:0.#} deg, d_hub "
+                      + $"{p.Swirler.DHubMm:0.###} -> d_tip "
+                      + $"{p.Swirler.DTipMm:0.###} mm (A per cup "
+                      + $"{p.Swirler.AEachMm2:0.###} mm2), chord "
+                      + $"{fChord:0.###} mm, vane t {fVaneT:0.##} mm, shroud "
+                      + $"t {fShroud:0.##} mm, injector bore r {fRSeat:0.###} mm");
+            return vox ?? new Voxels();
+        }
+
         // -- axial swirler ------------------------------------------------
 
         struct Rib
@@ -110,6 +175,16 @@ namespace CombustorDesigner
         static Voxels voxAxialVanes(CombustorParameters p, float fRHub,
                                     float fRTip, float fZ, float fChord,
                                     float fVaneT)
+            => voxAxialVanes(p, fRHub, fRTip, fZ, fChord, fVaneT,
+                             0f, 0f, 0f);
+
+        /// <summary>Axial vanes around a local axis parallel to Z through
+        /// (fCx, fCy), the pattern rotated by fPhiBase (0, 0, 0 = the
+        /// historical swirler on the machine axis).</summary>
+        static Voxels voxAxialVanes(CombustorParameters p, float fRHub,
+                                    float fRTip, float fZ, float fChord,
+                                    float fVaneT, float fCx, float fCy,
+                                    float fPhiBase)
         {
             float fBetaTip = p.Swirler.BetaDeg;
             float fBetaHub = float.IsNaN(p.Swirler.BetaHubDeg)
@@ -136,8 +211,8 @@ namespace CombustorDesigner
             Mesh msh = new Mesh();
             for (int k = 0; k < p.Swirler.NVanes; k++)
             {
-                float fPhi0 = 2f * MathF.PI * k / p.Swirler.NVanes;
-                AddVaneSolid(msh, aRibs, fZ, fPhi0);
+                float fPhi0 = fPhiBase + 2f * MathF.PI * k / p.Swirler.NVanes;
+                AddVaneSolid(msh, aRibs, fZ, fPhi0, fCx, fCy);
             }
             return new Voxels(msh);
         }
@@ -178,7 +253,7 @@ namespace CombustorDesigner
         /// closed contour + hub/tip caps. Phy-AC's AddBladeSolid, with the
         /// same LE/TE zipper cap so the triangulation never crosses.</summary>
         static void AddVaneSolid(Mesh msh, Rib[] aRibs, float fZCenter,
-                                 float fPhi0)
+                                 float fPhi0, float fCx = 0f, float fCy = 0f)
         {
             int nR = aRibs.Length;
             int nPts = aRibs[0].afPts.Length;
@@ -198,7 +273,7 @@ namespace CombustorDesigner
                     float yr = x * fSinG + y * fCosG;    // tangential
                     float fPhi = fPhi0 + yr / fR;        // wrap on cylinder
                     an[i, j] = msh.nAddVertex(new Vector3(
-                        fR * MathF.Cos(fPhi), fR * MathF.Sin(fPhi),
+                        fCx + fR * MathF.Cos(fPhi), fCy + fR * MathF.Sin(fPhi),
                         fZCenter + xr));
                 }
             }

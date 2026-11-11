@@ -1593,9 +1593,53 @@ def test_T28_drenabilidad():
           f"{len(con['dfam'].get('drain_ports', []))} puertos")
 
 
+def _sha256_file(path: str) -> str:
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for blk in iter(lambda: f.read(1 << 20), b""):
+            h.update(blk)
+    return h.hexdigest()
+
+
+#: modo explícito de T29 (17.1-03): el gate CAD fija el launcher de SU
+#: compilación y sus dos SHA256; el test nunca elige `dlls[-1]` y guarda
+#: contrato, salida y reportes del KJ66 en el outdir reservado.
+T29_ENV = ("PHYCB_T29_LAUNCHER_DLL", "PHYCB_T29_LAUNCHER_SHA256",
+           "PHYCB_T29_LIBRARY_SHA256", "PHYCB_T29_OUTDIR")
+
+
+def _t29_explicit():
+    """None en modo histórico; dict con el launcher fijado, o str con el
+    error del modo explícito (ausencia o discordancia)."""
+    vals = {k: os.environ.get(k, "").strip() for k in T29_ENV}
+    if not any(vals.values()):
+        return None
+    missing = [k for k, v in vals.items() if not v]
+    if missing:
+        return f"modo explícito incompleto: faltan {missing}"
+    dll = os.path.abspath(vals["PHYCB_T29_LAUNCHER_DLL"])
+    lib = os.path.join(os.path.dirname(dll), "CombustorDesigner.dll")
+    for p in (dll, lib):
+        if not os.path.isfile(p):
+            return f"no existe {p}"
+    got = (_sha256_file(dll), _sha256_file(lib))
+    want = (vals["PHYCB_T29_LAUNCHER_SHA256"].lower(),
+            vals["PHYCB_T29_LIBRARY_SHA256"].lower())
+    if got != want:
+        return f"SHA256 discordantes: launcher/biblioteca {got} != {want}"
+    return dict(dll=dll, lib=lib, sha=want,
+                outdir=os.path.abspath(vals["PHYCB_T29_OUTDIR"]))
+
+
 def test_T29_smoke_csharp():
     """T29 · Smoke del builder C#/PicoGK: el contrato de Phy-CB entra por
     `PhyCBImport.FromContractJson`, pasa `Validate()` y sale un STL."""
+    name0 = "T29 · el builder acepta el contrato y termina con código 0"
+    explicit = _t29_explicit()
+    if isinstance(explicit, str):
+        check(name0, False, explicit)
+        return
     if not SLOW:
         skip("T29 · smoke del builder C#/PicoGK",
              "SKIP: test caro (voxeliza y escribe STL) — usa --slow "
@@ -1603,20 +1647,34 @@ def test_T29_smoke_csharp():
         return
     dotnet = shutil.which("dotnet")
     if dotnet is None:
+        if explicit:
+            check(name0, False, "`dotnet` no está en el PATH (modo explícito)")
+            return
         skip("T29 · smoke del builder C#/PicoGK",
              "SKIP: `dotnet` no está en el PATH de esta máquina")
         return
-    dlls = sorted(glob.glob(os.path.join(
-        HERE, "CombustorDesigner.Example", "bin", "*", "*",
-        "CombustorDesigner.Example.dll")))
-    if not dlls:
-        skip("T29 · smoke del builder C#/PicoGK",
-             "SKIP: no hay Example.dll compilado — corre "
-             "`dotnet build CombustorDesigner.sln` primero")
-        return
+    if explicit:
+        launcher = explicit["dll"]
+    else:
+        dlls = sorted(glob.glob(os.path.join(
+            HERE, "CombustorDesigner.Example", "bin", "*", "*",
+            "CombustorDesigner.Example.dll")))
+        if not dlls:
+            skip("T29 · smoke del builder C#/PicoGK",
+                 "SKIP: no hay Example.dll compilado — corre "
+                 "`dotnet build CombustorDesigner.sln` primero")
+            return
+        launcher = dlls[-1]
 
     r, st, con = _contrato_ancla()
-    tmp = tempfile.mkdtemp(prefix="phycb_t29_")
+    if explicit:
+        tmp = explicit["outdir"]
+        if os.path.exists(tmp) and os.listdir(tmp):
+            check(name0, False, f"el outdir reservado no está vacío: {tmp}")
+            return
+        os.makedirs(tmp, exist_ok=True)
+    else:
+        tmp = tempfile.mkdtemp(prefix="phycb_t29_")
     try:
         contrato = os.path.join(tmp, "combustor.json")
         with open(contrato, "w", encoding="utf-8") as f:
@@ -1625,17 +1683,28 @@ def test_T29_smoke_csharp():
         outdir = os.path.join(tmp, "stl")
         t0 = time.time()
         try:
-            p = subprocess.run([dotnet, dlls[-1], contrato, outdir, "1.2"],
+            p = subprocess.run([dotnet, launcher, contrato, outdir, "1.2"],
                                capture_output=True, text=True,
                                timeout=CS_TIMEOUT_S)
         except subprocess.TimeoutExpired:
+            if explicit:
+                check(name0, False, f"el builder superó {CS_TIMEOUT_S:.0f} s "
+                      "(modo explícito: el timeout es un fallo)")
+                return
             skip("T29 · smoke del builder C#/PicoGK",
                  f"SKIP: el builder superó {CS_TIMEOUT_S:.0f} s "
                  "(voxelización demasiado cara en esta máquina)")
             return
         dt = time.time() - t0
-        check("T29 · el builder acepta el contrato y termina con código 0",
-              p.returncode == 0,
+        if explicit:
+            with open(os.path.join(tmp, "build.log"), "w",
+                      encoding="utf-8") as f:
+                f.write(json.dumps(dict(argv=[dotnet, launcher, contrato,
+                                              outdir, "1.2"],
+                                        rc=p.returncode, elapsed_s=dt))
+                        + "\n--- stdout\n" + (p.stdout or "")
+                        + "\n--- stderr\n" + (p.stderr or ""))
+        check(name0, p.returncode == 0,
               f"rc = {p.returncode} en {dt:.1f} s · "
               f"stderr: {(p.stderr or '')[-300:]}")
         stls = glob.glob(os.path.join(outdir, "*.stl"))
@@ -1653,13 +1722,22 @@ def test_T29_smoke_csharp():
         malo = os.path.join(tmp, "malo.json")
         with open(malo, "w", encoding="utf-8") as f:
             json.dump({"schema": "phycb-combustor-1"}, f)
-        q = subprocess.run([dotnet, dlls[-1], malo, outdir, "1.2"],
+        malo_out = os.path.join(tmp, "malo_out") if explicit else outdir
+        q = subprocess.run([dotnet, launcher, malo, malo_out, "1.2"],
                            capture_output=True, text=True, timeout=120)
+        intact = ""
+        if explicit:
+            after = (_sha256_file(explicit["dll"]),
+                     _sha256_file(explicit["lib"]))
+            if after != explicit["sha"]:
+                intact = f" · binarios cambiados tras la ejecución: {after}"
         check("T29 · un contrato inválido se rechaza con código ≠ 0 "
               "(lectura defensiva del consumidor, contrato §9)",
-              q.returncode != 0, f"rc = {q.returncode}")
+              q.returncode != 0 and not intact,
+              f"rc = {q.returncode}{intact}")
     finally:
-        shutil.rmtree(tmp, ignore_errors=True)
+        if not explicit:
+            shutil.rmtree(tmp, ignore_errors=True)
 
 
 def test_T30_coherencia_dimensional():

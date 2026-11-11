@@ -1391,3 +1391,110 @@ def test_matrix_single_model_source():
     doc["masses"]["25"] = {"status": "accepted", "model_source_sha": "c" * 40}
     with pytest.raises(sl.ScaleError):
         sl.matrix_model_source(doc)
+
+
+# ------------------------------------------------------- 17.1-03 · gate CAD
+def _cube_stl(path, lo=0.0, hi=10.0):
+    import struct
+    import numpy as np
+    c = np.array([[lo, lo, lo], [hi, lo, lo], [hi, hi, lo], [lo, hi, lo],
+                  [lo, lo, hi], [hi, lo, hi], [hi, hi, hi], [lo, hi, hi]])
+    faces = [(0, 2, 1), (0, 3, 2), (4, 5, 6), (4, 6, 7), (0, 1, 5), (0, 5, 4),
+             (1, 2, 6), (1, 6, 5), (2, 3, 7), (2, 7, 6), (3, 0, 4), (3, 4, 7)]
+    with open(path, "wb") as f:
+        f.write(b"\0" * 80 + struct.pack("<I", len(faces)))
+        for a, b, d in faces:
+            f.write(struct.pack("<3f", 0, 0, 0))
+            for v in (c[a], c[b], c[d]):
+                f.write(struct.pack("<3f", *v))
+            f.write(b"\0\0")
+
+
+def test_cad_canonical_sha_is_order_independent():
+    a = sl.canonical_sha256({"b": 1, "a": [1, 2]})
+    assert a == sl.canonical_sha256({"a": [1, 2], "b": 1})
+    with pytest.raises(ValueError):
+        sl.canonical_sha256({"x": float("nan")})
+
+
+def test_cad_stl_reader_and_point_in_mesh(tmp_path):
+    p = tmp_path / "cube.stl"
+    _cube_stl(p)
+    tris = sl.read_stl(p)
+    s = sl.stl_stats(tris)
+    assert s["n_triangles"] == 12 and s["finite"]
+    assert abs(s["volume_mm3"] - 1000.0) < 1e-6
+    assert s["bbox_mm"] == [0.0, 0.0, 0.0, 10.0, 10.0, 10.0]
+    pim = sl.PointInMesh(tris, cell_mm=2.0)
+    assert pim.inside((5, 5, 5)) and pim.inside((1, 9, 2))
+    assert not pim.inside((11, 5, 5)) and not pim.inside((5, -1, 5))
+    (tmp_path / "bad.stl").write_bytes(b"solid x\nendsolid x\n" + b" " * 80)
+    with pytest.raises(sl.ScaleError):
+        sl.read_stl(tmp_path / "bad.stl")
+
+
+def _rep(**kw):
+    rep = dict(schema="phycb-dfam-voxel-1", source="dfam_voxel(picogk)",
+               arch="annular", voxel_mm=0.8, g_voxel=[-0.5, -1.0, -1.0],
+               g_voxel_names=list(sl.DFAM_VOXEL_G_NAMES), feasible=True,
+               violations=[], detail={k: {} for k in sl.DFAM_DETAIL_KEYS},
+               parts=[dict(name="Liner", frac_unsupported=0.001)])
+    rep.update(kw)
+    return rep
+
+
+def test_cad_dfam_report_strict():
+    ok = sl.validate_dfam_report(_rep(), "annular", 0.8, ["Liner"])
+    assert ok["feasible"] and ok["g_voxel"] == [-0.5, -1.0, -1.0]
+    # g > 0 con reporte íntegro: incumplimiento REGISTRADO, no error
+    v = sl.validate_dfam_report(
+        _rep(g_voxel=[0.2, -1.0, -1.0], feasible=False,
+             violations=["overhang"]), "annular", 0.8, ["Liner"])
+    assert v["feasible"] is False and v["violations"] == ["overhang"]
+    for bad in (dict(source="dfam_voxel(failed)"), dict(arch="can"),
+                dict(voxel_mm=0.5), dict(g_voxel=[0.1, float("nan"), 0]),
+                dict(g_voxel=[-1, -1]), dict(feasible=False),
+                dict(g_voxel=[0.2, -1, -1], feasible=False, violations=[]),
+                dict(detail={"overhang": {}}),
+                dict(parts=[dict(name="Liner")]),
+                dict(g_voxel_names=["trapped_powder", "overhang_voxel",
+                                    "drain_exits"])):
+        with pytest.raises(sl.ScaleError):
+            sl.validate_dfam_report(_rep(**bad), "annular", 0.8, ["Liner"])
+
+
+def test_cad_cup_stations_from_pilot_contracts():
+    doc = sl.load_acceptance()
+    for arch, sign in (("annular", -1.0), ("reverse_annular", 1.0)):
+        con = json.loads(sl.decode_bytes(
+            doc["cells"][f"8/{arch}"]["contract"]["data"]))
+        g = sl.cup_geometry(con, 0.8)
+        assert g["n"] == con["injectors"]["count"] == con["swirler"]["count"]
+        assert g["sign"] == sign and len(g["stations"]) == g["n"]
+        # área por copa del contrato, no el total dividido otra vez
+        assert abs(math.pi * (g["r_tip"] ** 2 - g["r_hub"] ** 2)
+                   - g["a_each"]) < 1e-3 * g["a_each"]
+        for s in g["stations"]:
+            assert abs(math.hypot(s["x"], s["y"]) - g["ring"]) < 1e-9
+            assert s["z_lo"] < s["z"] < s["z_hi"]
+            # el tramo de la copa no entra en el barril del liner
+            z0, z1 = con["liner"]["profile"][0][0], \
+                con["liner"]["profile"][-1][0]
+            assert s["z_hi"] < z0 or s["z_lo"] > z1
+
+
+def test_cad_recommendation_rule_is_reproducible():
+    doc = sl.load_acceptance()
+    r1, r2 = sl.recommend_pilot(doc), sl.recommend_pilot(doc)
+    assert r1 == r2
+    assert r1["key"] in ("8/annular", "8/reverse_annular")
+    assert r1["steps"][0]["rule"].startswith("R1")
+    assert "empate" in r1["steps"][0]["result"]
+    assert r1["contract_sha256"] == doc["cells"][r1["key"]]["contract"][
+        "sha256"]
+
+
+def test_cad_runs_check_rejects_incomplete_block():
+    errs = sl.check_cad_runs({"schema": sl.CAD_SCHEMA, "runs": {}})
+    assert any("runs" in e for e in errs)
+    assert any("negativo" in e for e in errs)

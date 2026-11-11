@@ -359,6 +359,16 @@ namespace CombustorDesigner
         /// cut by voxSeatBores AFTER the fillet pass.</summary>
         public static Voxels voxSeats(CombustorParameters p, float fT)
         {
+            if (p.bScaleCups())
+            {
+                // annular_5_25: the seat of each station IS its swirl cup
+                // (shroud tube welded through the dome, hub bored for the
+                // injector) - built by Swirler.voxScaleCups.
+                Library.Log($"Liner: {p.Swirler.CupCount} swirl-cup stations "
+                          + "on the injector ring - the cup shroud is the "
+                          + "seat; no axis boss is built.");
+                return new Voxels();
+            }
             Voxels vox = null;
             float fSign = fDomeSign(p);
             float fDSeat = fSeatDMm(p);
@@ -380,6 +390,8 @@ namespace CombustorDesigner
         /// swirler sits on the axis, the swirler throat.</summary>
         public static Voxels voxSeatBores(CombustorParameters p)
         {
+            if (p.bScaleCups())
+                return voxCupThroats(p);
             Voxels vox = null;
             float fZD = p.fDomeZMm();
             float fRo = p.fLinerROuterAt(fZD);
@@ -452,6 +464,99 @@ namespace CombustorDesigner
                                      fRing * MathF.Sin(fPhi), fZ));
             }
             return aPos;
+        }
+
+        // -- swirl-cup ring of the annular_5_25 class (17.1-03, D-386) ----
+
+        /// <summary>One cup station: centre on the dome OUTER surface at the
+        /// injector ring radius and phase, and the axial span [fZLo, fZHi]
+        /// of its shroud tube and throat. The span covers the whole crossing
+        /// of the (oblique) dome wall by the cup footprint plus the vane
+        /// band, two voxels past each side, and nothing else - the trim is
+        /// local to the dome.</summary>
+        public struct CupStation
+        {
+            public Vector3 vecC;
+            public float fPhiDeg;
+            public float fZLo, fZHi;
+        }
+
+        /// <summary>Outer radius of one cup: d_tip/2 + shroud wall.</summary>
+        public static float fCupOuterRMm(CombustorParameters p)
+            => 0.5f * p.Swirler.DTipMm + p.fPrintableQuietMm(p.Liner.TWallMm);
+
+        /// <summary>Axial station of the dome INNER surface at a radius
+        /// (hemispherical: concentric sphere of radius r_outer - t).</summary>
+        public static float fDomeInnerSurfaceZ(CombustorParameters p,
+                                               float fRadius)
+        {
+            float fZD = p.fDomeZMm();
+            float fT = p.fPrintableQuietMm(p.Liner.TWallMm);
+            string strType = (p.Liner.DomeType ?? "").ToLowerInvariant();
+            if (!strType.StartsWith("hemi"))
+                return fZD - fDomeSign(p) * fT;
+            float fRin = MathF.Max(p.fLinerROuterAt(fZD) - fT, 0.05f);
+            float fArg = fRin * fRin - fRadius * fRadius;
+            float fH = fArg > 0f ? MathF.Sqrt(fArg) : 0f;
+            return fZD + fDomeSign(p) * fH;
+        }
+
+        public static List<CupStation> aCupStations(CombustorParameters p)
+        {
+            var aSt = new List<CupStation>();
+            float fRCup = fCupOuterRMm(p);
+            float fRing = fInjectorRingRMm(p);
+            float fHalf = 0.5f * Swirler.fChordMm(p);
+            float fM = 2f * p.VoxelSizeMm;
+            float[] afR = { MathF.Max(fRing - fRCup, 0f), fRing,
+                            fRing + fRCup };
+            float fLo = float.PositiveInfinity, fHi = float.NegativeInfinity;
+            foreach (float fR in afR)
+            {
+                foreach (float fZ in new[] { fDomeSurfaceZ(p, fR),
+                                             fDomeInnerSurfaceZ(p, fR) })
+                {
+                    fLo = MathF.Min(fLo, fZ);
+                    fHi = MathF.Max(fHi, fZ);
+                }
+            }
+            int k = 0;
+            foreach (Vector3 vecPos in aInjectorPositions(p))
+            {
+                float fPhi = p.Injectors.Phi0Deg
+                           + 360f * k / Math.Max(1, p.Injectors.Count);
+                aSt.Add(new CupStation
+                {
+                    vecC = vecPos,
+                    fPhiDeg = fPhi,
+                    fZLo = MathF.Min(fLo, vecPos.Z - fHalf) - fM,
+                    fZHi = MathF.Max(fHi, vecPos.Z + fHalf) + fM,
+                });
+                k++;
+            }
+            return aSt;
+        }
+
+        /// <summary>The throat of every cup: the dome wall inside the
+        /// shroud bore (r = d_tip/2) is removed over the station span only,
+        /// so the central passage and the foreign legs of the flame tube
+        /// are never touched (Validate checks the footprint).</summary>
+        static Voxels voxCupThroats(CombustorParameters p)
+        {
+            Voxels vox = null;
+            float fRT = 0.5f * p.Swirler.DTipMm;
+            foreach (CupStation st in aCupStations(p))
+            {
+                Voxels voxT = LatticeUtils.voxCylinderZ(
+                    new Vector3(st.vecC.X, st.vecC.Y, st.fZLo), fRT,
+                    st.fZHi - st.fZLo);
+                vox = vox == null ? voxT : vox + voxT;
+                Library.Log($"Liner: cup station phi {st.fPhiDeg:0.###} deg at "
+                          + $"({st.vecC.X:0.###}, {st.vecC.Y:0.###}, "
+                          + $"{st.vecC.Z:0.###}) mm, throat r {fRT:0.###} mm "
+                          + $"over z {st.fZLo:0.###}..{st.fZHi:0.###} mm");
+            }
+            return vox ?? new Voxels();
         }
 
         // -- fillets ------------------------------------------------------

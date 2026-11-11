@@ -12,6 +12,17 @@ Subcomandos (ejecutar desde el checkout ORIGINAL de Phy-CB):
     python -B -X utf8 validation/scale_l0.py verify   --masses 8
     python -B -X utf8 validation/scale_l0.py verify-candidate --candidate F
     python -B -X utf8 validation/scale_l0.py verify-handoff --wave 2 --summary F
+    python -B -X utf8 validation/scale_l0.py accept   --mass 5,25 --out-root DIR
+    python -B -X utf8 validation/scale_l0.py cad --out-root DIR --evidence F
+    python -B -X utf8 validation/scale_l0.py archive-cad --evidence F
+    python -B -X utf8 validation/scale_l0.py report
+    python -B -X utf8 validation/scale_l0.py verify-handoff --wave 3 --summary F
+
+`cad` (17.1-03, D-386) compila UNA vez el generador C#/PicoGK, construye en
+serie los dos contratos de 8 kg/s de la matriz y el smoke KJ66 (T29 en modo
+explícito) y comprueba STL, reporte DfAM de vóxel, envolvente y topología
+por copa. `archive-cad` incorpora ese bloque `cad_runs` y la recomendación
+D-377 a la matriz y `report` genera `validation/SCALE-L0-RESULTS.md`.
 
 `accept` (17.1-02) corre por la CLI normal de Phy-CB una búsqueda L0 por
 arquitectura anular con la descarga congelada del caudal, determina el θ
@@ -1031,8 +1042,10 @@ def parse_summary_fields(text: str, fields=SUMMARY_FIELDS) -> dict:
 def cmd_verify_handoff(args) -> int:
     if args.wave == 2:
         return cmd_verify_handoff_2(args)
+    if args.wave == 3:
+        return cmd_verify_handoff_3(args)
     if args.wave != 1:
-        raise ScaleError("sólo se definen los handoff de las olas 1 y 2")
+        raise ScaleError("sólo se definen los handoff de las olas 1, 2 y 3")
     f = parse_summary_fields(Path(args.summary).read_text(encoding="utf-8"))
     for k in ("model_basis_sha",):
         if not re.fullmatch(r"[0-9a-f]{40}", f[k]):
@@ -1970,6 +1983,1219 @@ def cmd_verify_handoff_2(args) -> int:
     return 0
 
 
+# ------------------------------------------------------- gate CAD (17.1-03)
+#: Gate de geometría (D-386): el generador C#/PicoGK de este checkout se
+#: compila UNA vez, se ejecuta en serie con los dos contratos reales de
+#: 8 kg/s (extraídos de la matriz por SHA) y con el smoke KJ66 (T29 en modo
+#: explícito con los mismos binarios), y cada salida se comprueba: STL de
+#: piezas y ensamblaje, reporte DfAM de vóxel estricto, envolvente, y
+#: topología por copa (copa, garganta, paso central) por puntos de
+#: ocupación sobre el STL del liner a tolerancia de vóxel.
+CAD_SCHEMA = "phycb.cad_runs/1"
+CAD_VOXEL_MM = 0.8
+CAD_BUILD_TIMEOUT_S = 180.0
+CAD_GEOM_TIMEOUT_S = 180.0
+CAD_T29_TIMEOUT_S = 420.0
+CAD_MEM_MAX_BYTES = 18 * 1024 ** 3
+CAD_BIN_REL = "CombustorDesigner.Example/bin/Debug/net9.0-windows"
+CAD_LAUNCHER_REL = CAD_BIN_REL + "/CombustorDesigner.Example.dll"
+CAD_LIBRARY_REL = CAD_BIN_REL + "/CombustorDesigner.dll"
+CAD_BUILD_ARGV = ("dotnet", "build", "CombustorDesigner.sln", "-t:Rebuild",
+                  "-c", "Debug", "--no-restore", "-nodeReuse:false",
+                  "-p:UseSharedCompilation=false")
+CAD_RUN_KEYS = ("kj66", "annular", "reverse_annular")
+DFAM_VOXEL_SCHEMA = "phycb-dfam-voxel-1"
+DFAM_VOXEL_SOURCE = "dfam_voxel(picogk)"
+DFAM_VOXEL_G_NAMES = ("overhang_voxel", "trapped_powder", "drain_exits")
+DFAM_DETAIL_KEYS = ("overhang", "enclosed_voids", "drainability", "params")
+SCALE_CLASS = "annular_5_25"
+REPORT_REL = "validation/SCALE-L0-RESULTS.md"
+EVIDENCE_PATHS = frozenset({EVIDENCE_REL, REPORT_REL})
+
+
+def canonical_sha256(obj) -> str:
+    """SHA256 del JSON canónico: claves ordenadas, sin NaN, separadores
+    sin espacios, UTF-8."""
+    text = json.dumps(obj, sort_keys=True, separators=(",", ":"),
+                      ensure_ascii=False, allow_nan=False)
+    return sha256_bytes(text.encode("utf-8"))
+
+
+def sha256_stream(path: Path) -> str:
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for blk in iter(lambda: f.read(1 << 22), b""):
+            h.update(blk)
+    return h.hexdigest()
+
+
+# -- STL ------------------------------------------------------------------
+def read_stl(path: Path) -> np.ndarray:
+    """Triángulos (N, 3, 3) float64 de un STL BINARIO; error si el tamaño no
+    casa con la cabecera o el fichero es ASCII/vacío."""
+    raw = Path(path).read_bytes()
+    if len(raw) < 84:
+        raise ScaleError(f"STL truncado: {path}")
+    n = int(np.frombuffer(raw[80:84], dtype="<u4")[0])
+    if n == 0 or len(raw) != 84 + 50 * n:
+        raise ScaleError(f"STL no binario o incoherente ({n} triángulos, "
+                         f"{len(raw)} B): {path}")
+    rec = np.dtype([("n", "<f4", 3), ("v", "<f4", (3, 3)), ("a", "<u2")])
+    tris = np.frombuffer(raw, dtype=rec, count=n, offset=84)["v"]
+    return tris.astype(np.float64)
+
+
+def stl_stats(tris: np.ndarray) -> dict:
+    finite = bool(np.isfinite(tris).all())
+    v0, v1, v2 = tris[:, 0], tris[:, 1], tris[:, 2]
+    vol = float(np.einsum("ij,ij->i", v0, np.cross(v1, v2)).sum() / 6.0)
+    lo = tris.reshape(-1, 3).min(axis=0)
+    hi = tris.reshape(-1, 3).max(axis=0)
+    return dict(n_triangles=int(len(tris)), finite=finite,
+                volume_mm3=abs(vol),
+                bbox_mm=[float(x) for x in (*lo, *hi)])
+
+
+class PointInMesh:
+    """Ocupación de puntos en una malla cerrada por paridad de rayos (+X,
+    +Y y, si discrepan, -X), con los triángulos indexados en rejillas 2D."""
+
+    _JITTER = np.array([1.2345e-3, 2.3456e-3, 3.4567e-3])
+
+    def __init__(self, tris: np.ndarray, cell_mm: float = 4.0):
+        self.t = tris
+        self.cell = float(cell_mm)
+        self.grids = {0: self._grid(1, 2), 1: self._grid(0, 2)}
+
+    def _grid(self, a: int, b: int):
+        lo = self.t[:, :, [a, b]].min(axis=1)
+        hi = self.t[:, :, [a, b]].max(axis=1)
+        org = lo.min(axis=0) - self.cell
+        i0 = np.floor((lo - org) / self.cell).astype(np.int64)
+        i1 = np.floor((hi - org) / self.cell).astype(np.int64)
+        nb = int(i1[:, 1].max()) + 2
+        na_ = i1[:, 0] - i0[:, 0] + 1
+        nb_ = i1[:, 1] - i0[:, 1] + 1
+        cnt = na_ * nb_
+        idx = np.repeat(np.arange(len(self.t)), cnt)
+        start = np.repeat(np.cumsum(cnt) - cnt, cnt)
+        local = np.arange(int(cnt.sum())) - start
+        nbr = np.repeat(nb_, cnt)
+        ca = np.repeat(i0[:, 0], cnt) + local // nbr
+        cb = np.repeat(i0[:, 1], cnt) + local % nbr
+        key = ca * nb + cb
+        order = np.argsort(key, kind="stable")
+        return dict(a=a, b=b, org=org, nb=nb, keys=key[order],
+                    idx=idx[order])
+
+    def _cand(self, g, p):
+        ia = int(np.floor((p[g["a"]] - g["org"][0]) / self.cell))
+        ib = int(np.floor((p[g["b"]] - g["org"][1]) / self.cell))
+        k = ia * g["nb"] + ib
+        s = np.searchsorted(g["keys"], k, side="left")
+        e = np.searchsorted(g["keys"], k, side="right")
+        return g["idx"][s:e]
+
+    def _crossings(self, p, axis: int, sign: float) -> int:
+        g = self.grids[axis]
+        c = self._cand(g, p)
+        if len(c) == 0:
+            return 0
+        tr = self.t[c]
+        d = np.zeros(3)
+        d[axis] = sign
+        e1 = tr[:, 1] - tr[:, 0]
+        e2 = tr[:, 2] - tr[:, 0]
+        h = np.cross(d, e2)
+        a = np.einsum("ij,ij->i", e1, h)
+        ok = np.abs(a) > 1e-12
+        f = np.zeros_like(a)
+        f[ok] = 1.0 / a[ok]
+        s = p - tr[:, 0]
+        u = f * np.einsum("ij,ij->i", s, h)
+        q = np.cross(s, e1)
+        v = f * (q @ d)
+        t = f * np.einsum("ij,ij->i", e2, q)
+        hit = ok & (u >= 0) & (v >= 0) & (u + v <= 1) & (t > 0)
+        return int(hit.sum())
+
+    def inside(self, p) -> bool:
+        p = np.asarray(p, dtype=np.float64) + self._JITTER
+        rx = self._crossings(p, 0, 1.0) % 2 == 1
+        ry = self._crossings(p, 1, 1.0) % 2 == 1
+        if rx == ry:
+            return bool(rx)
+        return bool(self._crossings(p, 0, -1.0) % 2 == 1)
+
+    def frac_inside(self, pts) -> float:
+        pts = list(pts)
+        return sum(self.inside(p) for p in pts) / max(len(pts), 1)
+
+
+# -- contrato → estaciones de copa (espejo de Liner.aCupStations) ----------
+def _interp_profile(prof, z: float, col: int) -> float:
+    zs = [r[0] for r in prof]
+    vs = [r[col] for r in prof]
+    return float(np.interp(z, zs, vs))
+
+
+def cup_geometry(contract: dict, voxel: float) -> dict:
+    """Estaciones de copa calculadas desde el contrato con las mismas reglas
+    que el C# (independiente del STL que se comprueba)."""
+    lin = contract["liner"]
+    prof = lin["profile"]
+    sw, inj = contract["swirler"], contract["injectors"]
+    t = max(float(lin["t_wall_mm"]), max(0.6, 2.0 * voxel))
+    z0, z1 = prof[0][0], prof[-1][0]
+    dome = lin.get("dome") or {}
+    zd = float(dome.get("z_mm", z0))
+    sign = -1.0 if zd <= 0.5 * (z0 + z1) else 1.0
+    hemi = str(dome.get("type", "")).lower().startswith("hemi")
+    big_r = _interp_profile(prof, zd, 2)
+
+    def z_out(r):
+        if not hemi:
+            return zd
+        return zd + sign * math.sqrt(max(big_r * big_r - r * r, 0.0))
+
+    def z_in(r):
+        if not hemi:
+            return zd - sign * t
+        ri = max(big_r - t, 0.05)
+        return zd + sign * math.sqrt(max(ri * ri - r * r, 0.0))
+
+    ring = float(inj["ring_r_mm"])
+    n = int(inj["count"])
+    r_tip, r_hub = 0.5 * float(sw["d_tip_mm"]), 0.5 * float(sw["d_hub_mm"])
+    r_cup = r_tip + t
+    chord = float(sw["chord_mm"])
+    if str(inj.get("type", "")).lower().startswith("vapor") \
+            and float(inj.get("tube_d_mm") or 0) > 0:
+        r_seat = 0.5 * float(inj["tube_d_mm"]) + voxel
+    else:
+        r_seat = 0.5 * float(inj.get("body_d_mm") or 0) + voxel
+    zs = [f(r) for r in (max(ring - r_cup, 0.0), ring, ring + r_cup)
+          for f in (z_out, z_in)]
+    st = []
+    for k in range(n):
+        phi = math.radians(float(inj.get("phi0_deg", 0.0)) + 360.0 * k / n)
+        zc = z_out(ring)
+        st.append(dict(phi_rad=phi, x=ring * math.cos(phi),
+                       y=ring * math.sin(phi), z=zc,
+                       z_lo=min(min(zs), zc - 0.5 * chord) - 2 * voxel,
+                       z_hi=max(max(zs), zc + 0.5 * chord) + 2 * voxel))
+    return dict(stations=st, ring=ring, n=n, r_tip=r_tip, r_hub=r_hub,
+                r_seat=r_seat, r_cup=r_cup, t=t, chord=chord, sign=sign,
+                z_out=z_out, z_in=z_in, z_dome=zd, profile=prof,
+                n_vanes=int(sw["n_vanes"]),
+                a_each=float(sw["A_sw_each_mm2"]))
+
+
+def topology_checks(contract: dict, pim: PointInMesh, voxel: float) -> dict:
+    """Copa, garganta y paso central por puntos de ocupación sobre el STL
+    del liner (la copa es monolítica con el domo). Umbrales: el anillo del
+    cubo y la camisa deben estar ocupados (>= 75 %); la garganta en el plano
+    de álabes y a la altura de la pared del domo, libre (>= 60 %: los
+    álabes ocupan ~15 %); el domo entre copas, ocupado (la garganta es
+    local); el centro de cada cubo (asiento del inyector) y el paso
+    central, libres."""
+    g = cup_geometry(contract, voxel)
+    out, ok = [], True
+    for s in g["stations"]:
+        cx, cy, zc = s["x"], s["y"], s["z"]
+
+        def ring_pts(r, z_fn, m):
+            for j in range(m):
+                a = 2 * math.pi * (j + 0.5) / m
+                x, y = cx + r * math.cos(a), cy + r * math.sin(a)
+                yield (x, y, z_fn(x, y))
+
+        def wall_mid(x, y):
+            r = math.hypot(x, y)
+            return 0.5 * (g["z_out"](r) + g["z_in"](r))
+
+        hub = pim.frac_inside(ring_pts(0.5 * (g["r_seat"] + g["r_hub"]),
+                                       lambda x, y: zc, 8))
+        shroud = pim.frac_inside(ring_pts(g["r_tip"] + 0.5 * g["t"],
+                                          lambda x, y: zc, 12))
+        throat_vanes = 1.0 - pim.frac_inside(ring_pts(
+            0.5 * (g["r_hub"] + g["r_tip"]), lambda x, y: zc, 24))
+        throat_wall = 1.0 - pim.frac_inside(ring_pts(
+            0.5 * (g["r_hub"] + g["r_tip"]), wall_mid, 24))
+        seat_open = not pim.inside((cx, cy, zc))
+        mid = s["phi_rad"] + math.pi / g["n"]
+        xm, ym = g["ring"] * math.cos(mid), g["ring"] * math.sin(mid)
+        dome_between = pim.inside((xm, ym, wall_mid(xm, ym)))
+        r_ok = (hub >= 0.75 and shroud >= 0.75 and throat_vanes >= 0.60
+                and throat_wall >= 0.60 and seat_open and dome_between)
+        ok = ok and r_ok
+        out.append(dict(phi_deg=round(math.degrees(s["phi_rad"]), 6),
+                        center_mm=[round(cx, 4), round(cy, 4), round(zc, 4)],
+                        z_span_mm=[round(s["z_lo"], 4), round(s["z_hi"], 4)],
+                        hub_solid=hub, shroud_solid=shroud,
+                        throat_free_vane_plane=throat_vanes,
+                        throat_free_dome_wall=throat_wall,
+                        injector_seat_open=seat_open,
+                        dome_solid_between_cups=dome_between, ok=r_ok))
+    prof = g["profile"]
+    zs = [s["z"] for s in g["stations"]]
+    z_a = min(min(zs), prof[0][0])
+    z_b = max(max(zs), prof[-1][0])
+    central = []
+    for k in range(12):
+        z = z_a + (z_b - z_a) * (k + 0.5) / 12
+        r_in = _interp_profile(prof, z, 1)
+        pts = [(0.0, 0.0, z)] + [(0.5 * r_in * math.cos(a),
+                                  0.5 * r_in * math.sin(a), z)
+                                 for a in (0.3, 1.9, 3.5, 5.1)]
+        central.append(not any(pim.inside(p) for p in pts))
+    c_ok = all(central)
+    return dict(ok=bool(ok and c_ok), stations=out,
+                central_passage_open=c_ok, central_samples=len(central) * 5,
+                n_cups=g["n"], ring_r_mm=g["ring"], r_tip_mm=g["r_tip"],
+                r_hub_mm=g["r_hub"], r_seat_mm=g["r_seat"],
+                shroud_t_mm=g["t"], n_vanes=g["n_vanes"],
+                a_each_mm2=g["a_each"],
+                a_each_from_d_mm2=math.pi * (g["r_tip"] ** 2 - g["r_hub"] ** 2),
+                thresholds=dict(hub=0.75, shroud=0.75, throat=0.60))
+
+
+# -- reporte DfAM de vóxel ------------------------------------------------
+def validate_dfam_report(rep: dict, arch: str, voxel: float,
+                         printable_parts: list) -> dict:
+    """Reporte estricto: un fallo de forma es error; un g > 0 con reporte
+    íntegro es un incumplimiento voxelizado REGISTRADO, no un error."""
+    errs = []
+    if rep.get("schema") != DFAM_VOXEL_SCHEMA:
+        errs.append(f"schema {rep.get('schema')!r}")
+    if rep.get("source") != DFAM_VOXEL_SOURCE:
+        errs.append(f"source {rep.get('source')!r}")
+    if rep.get("arch") != arch:
+        errs.append(f"arch {rep.get('arch')!r} != {arch!r}")
+    vx = rep.get("voxel_mm")
+    if not (isinstance(vx, (int, float)) and abs(float(vx) - voxel) < 1e-6):
+        errs.append(f"voxel_mm {vx!r} != {voxel}")
+    g = rep.get("g_voxel")
+    if not (isinstance(g, list) and len(g) == 3
+            and all(isinstance(x, (int, float)) and not isinstance(x, bool)
+                    and math.isfinite(x) for x in g)):
+        errs.append(f"g_voxel inválido: {g!r}")
+        g = None
+    if list(rep.get("g_voxel_names") or []) != list(DFAM_VOXEL_G_NAMES):
+        errs.append(f"g_voxel_names {rep.get('g_voxel_names')!r}")
+    det = rep.get("detail")
+    if not isinstance(det, dict) or any(k not in det for k in DFAM_DETAIL_KEYS):
+        errs.append(f"detail sin {list(DFAM_DETAIL_KEYS)}")
+    feas = rep.get("feasible")
+    viol = rep.get("violations")
+    if g is not None:
+        if not isinstance(feas, bool) or feas != all(x <= 0 for x in g):
+            errs.append(f"feasible {feas!r} incoherente con g {g}")
+        if feas is False and not (isinstance(viol, list) and viol
+                                  and all(isinstance(v, str) for v in viol)):
+            errs.append("incumplimientos sin violations explicadas")
+    parts = {p.get("name"): p for p in rep.get("parts") or []}
+    for name in printable_parts:
+        p = parts.get(name)
+        fr = (p or {}).get("frac_unsupported")
+        if p is None:
+            errs.append(f"parte {name} ausente del reporte")
+        elif not (isinstance(fr, (int, float)) and math.isfinite(fr)):
+            errs.append(f"frac_unsupported de {name} ausente o no finita")
+    if errs:
+        raise ScaleError("dfam_report.json inválido: " + "; ".join(errs))
+    return dict(g_voxel=[float(x) for x in g], g_voxel_names=list(
+        DFAM_VOXEL_G_NAMES), feasible=bool(feas),
+        violations=list(viol or []),
+        frac_unsupported={n: float(parts[n]["frac_unsupported"])
+                          for n in printable_parts})
+
+
+# -- procesos -------------------------------------------------------------
+def _picogk_processes() -> list:
+    import psutil
+    out = []
+    for pr in psutil.process_iter(["pid", "name", "cmdline"]):
+        try:
+            cmd = " ".join(pr.info.get("cmdline") or [])
+        except Exception:
+            continue
+        if "CombustorDesigner.Example" in cmd or (
+                (pr.info.get("name") or "").lower().startswith("dotnet")
+                and ("MSBuild" in cmd or "VBCSCompiler" in cmd)):
+            out.append(dict(pid=pr.info["pid"], cmd=cmd[:200]))
+    return out
+
+
+def _require_no_picogk(where: str) -> None:
+    live = _picogk_processes()
+    if live:
+        raise ScaleError(f"{where}: hay procesos PicoGK/dotnet vivos {live} "
+                         "— nunca dos construcciones a la vez")
+
+
+def _kill_tree(proc) -> None:
+    import psutil
+    try:
+        root = psutil.Process(proc.pid)
+        for ch in root.children(recursive=True):
+            ch.kill()
+        root.kill()
+    except psutil.NoSuchProcess:
+        pass
+
+
+def run_bounded(argv: list, log_path: Path, timeout_s: float,
+                mem_max: int = CAD_MEM_MAX_BYTES, env=None,
+                cwd: Path = CB_ROOT) -> dict:
+    """Proceso con tope de reloj y de memoria (RSS del árbol); al exceder
+    cualquiera se detienen proceso y descendientes."""
+    import psutil
+    t0, started = time.time(), _now()
+    peak, cause = 0, None
+    with open(log_path, "wb") as log:
+        proc = subprocess.Popen(argv, cwd=str(cwd), stdout=log,
+                                stderr=subprocess.STDOUT,
+                                stdin=subprocess.DEVNULL, env=env)
+        while True:
+            try:
+                rc = proc.wait(timeout=0.5)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+            try:
+                root = psutil.Process(proc.pid)
+                rss = root.memory_info().rss + sum(
+                    c.memory_info().rss for c in root.children(recursive=True))
+                peak = max(peak, rss)
+            except psutil.Error:
+                rss = 0
+            if time.time() - t0 > timeout_s:
+                cause = f"timeout {timeout_s:g} s"
+            elif rss > mem_max:
+                cause = f"memoria {rss / 2**30:.1f} GiB > {mem_max / 2**30:g}"
+            if cause:
+                _kill_tree(proc)
+                proc.wait(timeout=30)
+                rc = None
+                break
+    raw = Path(log_path).read_bytes()
+    return dict(argv=[str(a) for a in argv], rc=rc, killed=cause,
+                started_utc=started, finished_utc=_now(),
+                elapsed_s=round(time.time() - t0, 3),
+                peak_rss_gib=round(peak / 2 ** 30, 3), log=str(log_path),
+                log_sha256=sha256_bytes(raw), timeout_s=timeout_s)
+
+
+def _bin_hashes() -> dict:
+    out = {}
+    for k, rel in (("launcher", CAD_LAUNCHER_REL), ("library", CAD_LIBRARY_REL)):
+        p = CB_ROOT / rel
+        if not p.is_file():
+            raise ScaleError(f"falta {rel} tras la compilación")
+        out[k] = sha256_stream(p)
+    return out
+
+
+def generator_identity() -> dict:
+    """La fuente del generador debe estar confirmada: árbol limpio (salvo la
+    evidencia) y física idéntica a la de la matriz."""
+    st = git_state(CB_ROOT)
+    dirty = [ln for ln in _git(CB_ROOT, "status", "--porcelain").splitlines()
+             if ln.strip() and ln[3:].strip() not in EVIDENCE_PATHS]
+    if dirty:
+        raise ScaleError(f"árbol de Phy-CB con cambios sin confirmar {dirty[:5]}"
+                         " — confirme la fuente C#, el arnés y el test antes "
+                         "del gate fresco")
+    return dict(generator_source_sha=st["head"], branch=st["branch"])
+
+
+# -- gate -----------------------------------------------------------------
+def _pilot_contracts(doc: dict, dest: Path) -> dict:
+    out = {}
+    for arch in ACCEPT_ARCHS:
+        c = (doc.get("cells") or {}).get(f"8/{arch}")
+        if not c or c.get("status") != "accepted":
+            raise ScaleError(f"falta la celda aceptada 8/{arch}")
+        raw = decode_bytes(c["contract"]["data"])
+        if sha256_bytes(raw) != c["contract"]["sha256"]:
+            raise ScaleError(f"8/{arch}: bytes de contrato alterados")
+        p = dest / f"contract_8_{arch}.json"
+        p.write_bytes(raw)
+        out[arch] = dict(path=p, raw=raw, sha256=c["contract"]["sha256"],
+                         cell=f"8/{arch}")
+    return out
+
+
+def _part_checks(rep: dict, contract: dict, voxel: float,
+                 need: list) -> tuple:
+    """STL de cada parte del reporte: triángulos finitos, caja coherente con
+    el reporte y con la envolvente, volumen de malla ~ volumen de vóxel."""
+    errs, parts = [], []
+    cas = contract.get("casing") or {}
+    cprof = cas.get("profile") or [[0, 0]]
+    r_env = (max(r[1] for r in cprof) + float(cas.get("t_wall_mm", 0))
+             + float(cas.get("flange_w_mm", 0)) + float(cas.get("boss_h_mm", 0))
+             + 4 * voxel)
+    z_pad = (float(cas.get("flange_t_mm", 0)) + float(cas.get("t_wall_mm", 0))
+             + float(cas.get("head_plate_t_mm", 0)) + 4 * voxel)
+    z_env = (min(r[0] for r in cprof) - z_pad, max(r[0] for r in cprof) + z_pad)
+    names = [p.get("name") for p in rep.get("parts") or []]
+    for n in need:
+        if n not in names:
+            errs.append(f"falta la parte {n}")
+    vols = {}
+    for p in rep.get("parts") or []:
+        path = Path(p["stl"])
+        if not path.is_file():
+            errs.append(f"STL ausente: {path}")
+            continue
+        tris = read_stl(path)
+        s = stl_stats(tris)
+        del tris
+        bb_r = p.get("bbox_mm")
+        e = []
+        if not s["finite"] or s["n_triangles"] < 12:
+            e.append("triángulos no finitos o malla vacía")
+        if not (isinstance(bb_r, list) and len(bb_r) == 6) or max(
+                abs(a - b) for a, b in zip(bb_r, s["bbox_mm"])) > 2 * voxel:
+            e.append(f"caja STL {s['bbox_mm']} != reporte {bb_r}")
+        lo, hi = s["bbox_mm"][:3], s["bbox_mm"][3:]
+        if max(abs(lo[0]), abs(lo[1]), abs(hi[0]), abs(hi[1])) > r_env \
+                or lo[2] < z_env[0] or hi[2] > z_env[1]:
+            e.append(f"fuera de la envolvente r <= {r_env:.1f}, z en "
+                     f"[{z_env[0]:.1f}, {z_env[1]:.1f}]")
+        v_rep = float(p.get("volume_mm3") or 0)
+        if not (v_rep > 0 and abs(s["volume_mm3"] - v_rep) <= 0.05 * v_rep):
+            e.append(f"volumen de malla {s['volume_mm3']:.0f} != vóxel "
+                     f"{v_rep:.0f} (5 %)")
+        vols[p["name"]] = v_rep
+        parts.append(dict(name=p["name"], stl=str(path),
+                          stl_sha256=sha256_stream(path),
+                          size_bytes=path.stat().st_size,
+                          printable=p.get("printable"),
+                          build_s=p.get("build_s"),
+                          volume_voxel_mm3=v_rep, **{k: s[k] for k in (
+                              "n_triangles", "volume_mm3", "bbox_mm")},
+                          ok=not e, errors=e))
+        errs += [f"{p['name']}: {x}" for x in e]
+    if "Assembly" in vols:
+        others = [v for k, v in vols.items() if k != "Assembly"]
+        if others and not (max(others) <= vols["Assembly"]
+                           <= 1.02 * sum(others)):
+            errs.append("volumen del ensamblaje incoherente con sus partes")
+    return parts, errs
+
+
+def cad_run_geometry(key: str, contract_path: Path, contract: dict,
+                     outdir: Path, bins: dict, voxel: float) -> dict:
+    _require_no_picogk(f"antes de {key}")
+    if _bin_hashes() != bins:
+        raise ScaleError(f"{key}: binarios distintos de la compilación")
+    launcher = str(CB_ROOT / CAD_LAUNCHER_REL)
+    run = run_bounded(["dotnet", launcher, str(contract_path), str(outdir),
+                       repr(voxel)], outdir.parent / f"{key}.log",
+                      CAD_GEOM_TIMEOUT_S)
+    after = _bin_hashes()
+    _require_no_picogk(f"después de {key}")
+    res = dict(key=key, run=run, voxel_mm=voxel, outdir=str(outdir),
+               bins_unchanged=after == bins, ok=False, errors=[])
+    if after != bins:
+        res["errors"].append("los binarios cambiaron durante la ejecución")
+    if run["rc"] != 0:
+        res["errors"].append(f"rc {run['rc']} ({run['killed'] or 'fallo'})")
+        return res
+    rp = outdir / "dfam_report.json"
+    if not rp.is_file():
+        res["errors"].append("falta dfam_report.json")
+        return res
+    rb = rp.read_bytes()
+    rep = _strict_json(rb)
+    n_inj = int(contract["injectors"]["count"])
+    need = ["Liner", "Casing"] + [f"Vaporizer{i + 1}" for i in range(n_inj)]
+    try:
+        res["dfam"] = validate_dfam_report(rep, contract["arch"], voxel, need)
+    except ScaleError as exc:
+        res["errors"].append(str(exc))
+    parts, errs = _part_checks(rep, contract, voxel, need + ["Assembly"])
+    res["parts"] = parts
+    res["errors"] += errs
+    res["dfam_report"] = dict(path=str(rp), sha256=sha256_bytes(rb),
+                              size_bytes=len(rb), encoding="lzma+base64",
+                              data=encode_bytes(rb))
+    pl = outdir / "PicoGK.log"
+    if pl.is_file():
+        res["picogk_log"] = dict(path=str(pl), sha256=sha256_stream(pl))
+    liner = next((p for p in parts if p["name"] == "Liner"), None)
+    if liner is not None:
+        t0 = time.time()
+        pim = PointInMesh(read_stl(Path(liner["stl"])))
+        res["topology"] = topology_checks(contract, pim, voxel)
+        res["topology"]["elapsed_s"] = round(time.time() - t0, 1)
+        del pim
+        if not res["topology"]["ok"]:
+            res["errors"].append("topología de copa/garganta/paso central "
+                                 "incorrecta")
+    res["ok"] = not res["errors"]
+    return res
+
+
+def cad_negative_count(raw: bytes, dest: Path, bins: dict) -> dict:
+    """Contrato de escala con swirler.count != injectors.count: debe fallar
+    en Validate (rc 3) ANTES de voxelizar (sin PicoGK.log ni STL)."""
+    c = json.loads(raw.decode("utf-8"))
+    c["swirler"]["count"] = int(c["injectors"]["count"]) - 1
+    p = dest / "contract_negative_count.json"
+    p.write_text(json.dumps(c, ensure_ascii=False), encoding="utf-8")
+    out = dest / "negative_out"
+    _require_no_picogk("antes del ensayo negativo")
+    run = run_bounded(["dotnet", str(CB_ROOT / CAD_LAUNCHER_REL), str(p),
+                       str(out), repr(CAD_VOXEL_MM)],
+                      dest / "negative.log", 60.0)
+    log = Path(run["log"]).read_text(encoding="utf-8", errors="replace")
+    voxelized = out.exists() and any(out.iterdir())
+    ok = (run["rc"] == 3 and "scale cups" in log and "swirler.count" in log
+          and not voxelized and _bin_hashes() == bins)
+    return dict(contract_sha256=sha256_file(p), run=run, voxelized=voxelized,
+                message=[ln for ln in log.splitlines() if "scale cups" in ln],
+                ok=ok)
+
+
+def cad_t29(bins: dict, outdir: Path) -> dict:
+    env = dict(os.environ, PHYCB_T29_LAUNCHER_DLL=str(CB_ROOT / CAD_LAUNCHER_REL),
+               PHYCB_T29_LAUNCHER_SHA256=bins["launcher"],
+               PHYCB_T29_LIBRARY_SHA256=bins["library"],
+               PHYCB_T29_OUTDIR=str(outdir), PYTHONIOENCODING="utf-8")
+    _require_no_picogk("antes de T29")
+    run = run_bounded([sys.executable, "-B", "-X", "utf8", "test_phycb.py",
+                       "--slow", "--only", "T29"], outdir.parent / "t29.log",
+                      CAD_T29_TIMEOUT_S, env=env)
+    _require_no_picogk("después de T29")
+    log = Path(run["log"]).read_text(encoding="utf-8", errors="replace")
+    m = re.search(r"(\d+)/(\d+) checks OK\s+·\s+(\d+) SALTADOS", log)
+    counts = tuple(int(x) for x in m.groups()) if m else None
+    res = dict(key="kj66", run=run, voxel_mm=1.2, outdir=str(outdir),
+               checks=dict(ok=counts[0], total=counts[1], skipped=counts[2])
+               if counts else None, bins_unchanged=_bin_hashes() == bins,
+               ok=False, errors=[])
+    if counts != (4, 4, 0):
+        res["errors"].append(f"T29 dio {counts}, se exige 4/4 y 0 SALTADOS")
+    if run["rc"] != 0:
+        res["errors"].append(f"rc {run['rc']} ({run['killed'] or 'fallo'})")
+    cp = outdir / "combustor.json"
+    rp = outdir / "stl" / "dfam_report.json"
+    if not (cp.is_file() and rp.is_file()):
+        res["errors"].append("T29 no dejó contrato y reporte en el outdir")
+        return res
+    craw, rb = cp.read_bytes(), rp.read_bytes()
+    contract = _strict_json(craw)
+    rep = _strict_json(rb)
+    res["contract"] = dict(path=str(cp), sha256=sha256_bytes(craw),
+                           operating_class=contract.get("operating_class"),
+                           arch=contract.get("arch"))
+    res["dfam_report"] = dict(path=str(rp), sha256=sha256_bytes(rb),
+                              size_bytes=len(rb), encoding="lzma+base64",
+                              data=encode_bytes(rb))
+    n_inj = int(contract["injectors"]["count"])
+    need = ["Liner", "Casing"] + [f"Vaporizer{i + 1}" for i in range(n_inj)]
+    try:
+        res["dfam"] = validate_dfam_report(rep, contract["arch"], 1.2, need)
+    except ScaleError as exc:
+        res["errors"].append(str(exc))
+    parts, errs = _part_checks(rep, contract, 1.2, need + ["Assembly"])
+    res["parts"] = parts
+    res["errors"] += errs
+    res["ok"] = not res["errors"]
+    return res
+
+
+def cmd_cad(args) -> int:
+    ident = generator_identity()
+    doc = load_acceptance()
+    model = matrix_model_source(doc)
+    if model is None or _changed_since(model):
+        raise ScaleError("la física del checkout no es la de la matriz")
+    root = Path(args.out_root) / f"cad-{uuid.uuid4().hex[:8]}"
+    root.mkdir(parents=True, exist_ok=False)
+    print(f"[cad] generador {ident['generator_source_sha'][:12]} · modelo "
+          f"{model[:12]} · {root}", flush=True)
+    contracts = _pilot_contracts(doc, root)
+    _require_no_picogk("antes de compilar")
+    build = run_bounded(list(CAD_BUILD_ARGV), root / "build.log",
+                        CAD_BUILD_TIMEOUT_S)
+    if build["rc"] != 0:
+        raise ScaleError(f"la compilación falló (rc {build['rc']}, "
+                         f"{build['killed']}); ver {build['log']}")
+    bins = _bin_hashes()
+    print(f"[cad] compilado en {build['elapsed_s']} s · launcher "
+          f"{bins['launcher'][:12]} · biblioteca {bins['library'][:12]}",
+          flush=True)
+    runs = {}
+    for arch in ACCEPT_ARCHS:
+        c = contracts[arch]
+        r = cad_run_geometry(arch, c["path"], json.loads(c["raw"]),
+                             root / arch, bins, CAD_VOXEL_MM)
+        r["contract"] = dict(path=str(c["path"]), sha256=c["sha256"],
+                             cell=c["cell"], arch=arch,
+                             operating_class=SCALE_CLASS)
+        runs[arch] = r
+        print(f"[cad] {arch}: {'OK' if r['ok'] else 'FALLO'} · "
+              f"{r['run']['elapsed_s']} s · pico {r['run']['peak_rss_gib']} "
+              f"GiB" + (f" · {r['errors']}" if r["errors"] else ""), flush=True)
+        if not r["ok"] and r["run"]["rc"] != 0:
+            break
+    neg = cad_negative_count(contracts["annular"]["raw"], root, bins)
+    print(f"[cad] negativo (count incoherente): "
+          f"{'OK' if neg['ok'] else 'FALLO'} · rc {neg['run']['rc']}",
+          flush=True)
+    runs["kj66"] = cad_t29(bins, root / "kj66")
+    k = runs["kj66"]
+    print(f"[cad] kj66 (T29): {'OK' if k['ok'] else 'FALLO'} · "
+          f"{k['checks']} · {k['run']['elapsed_s']} s"
+          + (f" · {k['errors']}" if k["errors"] else ""), flush=True)
+    cad_runs = dict(schema=CAD_SCHEMA, generated_utc=_now(),
+                    generator_source_sha=ident["generator_source_sha"],
+                    model_source_sha=model, voxel_mm=CAD_VOXEL_MM,
+                    launcher=CAD_LAUNCHER_REL, library=CAD_LIBRARY_REL,
+                    launcher_sha256=bins["launcher"],
+                    library_sha256=bins["library"], build=build,
+                    budgets=dict(build_s=CAD_BUILD_TIMEOUT_S,
+                                 geometry_s=CAD_GEOM_TIMEOUT_S,
+                                 t29_s=CAD_T29_TIMEOUT_S,
+                                 mem_gib=CAD_MEM_MAX_BYTES / 2 ** 30),
+                    out_root=str(root), runs=runs, negative_count=neg,
+                    ok=(sorted(runs) == sorted(CAD_RUN_KEYS)
+                        and all(r["ok"] for r in runs.values())
+                        and neg["ok"]))
+    ev = dict(cad_runs=cad_runs, cad_evidence_sha256=canonical_sha256(cad_runs))
+    Path(args.evidence).write_text(json.dumps(
+        ev, indent=1, ensure_ascii=False, sort_keys=True, allow_nan=False)
+        + "\n", encoding="utf-8", newline="\n")
+    print(f"[cad] {'OK' if cad_runs['ok'] else 'BLOQUEADO'} · evidencia "
+          f"{args.evidence} · cad_evidence_sha256 {ev['cad_evidence_sha256']}")
+    return 0 if cad_runs["ok"] else 1
+
+
+def check_cad_runs(cad: dict, *, generator_sha=None, bins=None,
+                   matrix=None) -> list:
+    """Schema, hashes y los tres resultados del bloque cad_runs."""
+    errs = []
+    if cad.get("schema") != CAD_SCHEMA:
+        errs.append(f"schema {cad.get('schema')!r}")
+    runs = cad.get("runs") or {}
+    if sorted(runs) != sorted(CAD_RUN_KEYS):
+        errs.append(f"runs {sorted(runs)} != {sorted(CAD_RUN_KEYS)}")
+    for k, r in runs.items():
+        if not r.get("ok") or r.get("errors"):
+            errs.append(f"{k} no pasó: {r.get('errors')}")
+        d = r.get("dfam_report") or {}
+        try:
+            if sha256_bytes(decode_bytes(d["data"])) != d["sha256"]:
+                errs.append(f"{k}: bytes del reporte as-built alterados")
+        except Exception as exc:
+            errs.append(f"{k}: reporte as-built irrecuperable ({exc})")
+        if k != "kj66" and not (r.get("topology") or {}).get("ok"):
+            errs.append(f"{k}: topología no verificada")
+    if not (cad.get("negative_count") or {}).get("ok"):
+        errs.append("el ensayo negativo de conteo no se rechazó antes de "
+                    "voxelizar")
+    if not cad.get("ok"):
+        errs.append("cad_runs.ok es falso")
+    if generator_sha and cad.get("generator_source_sha") != generator_sha:
+        errs.append("generator_source_sha distinto")
+    if bins and (cad.get("launcher_sha256"), cad.get("library_sha256")) != (
+            bins.get("launcher"), bins.get("library")):
+        errs.append("SHA256 de binarios distintos")
+    if matrix is not None:
+        for arch in ACCEPT_ARCHS:
+            cell = (matrix.get("cells") or {}).get(f"8/{arch}") or {}
+            got = ((runs.get(arch) or {}).get("contract") or {}).get("sha256")
+            if got != (cell.get("contract") or {}).get("sha256"):
+                errs.append(f"{arch}: el contrato CAD no es el de la matriz")
+    return errs
+
+
+# ------------------------------------------- entrega: cad_runs, D-377, informe
+SUMMARY_FIELDS_3 = ("model_source_sha", "generator_source_sha",
+                    "model_delivery_sha", "matrix_sha256", "report_sha256",
+                    "cad_evidence_sha256", "launcher_sha256",
+                    "library_sha256", "matrix_acceptance_count",
+                    "cad_runs_count")
+MATRIX_MASSES = ("5", "8", "25")
+GENERATOR_PREFIXES = ("CombustorDesigner/", "CombustorDesigner.Example/",
+                      "CombustorDesigner.sln")
+TIE_G = 1e-9
+TIE_MARGIN = 1e-6
+
+
+def _cell_contract(c: dict) -> dict:
+    return _strict_json(decode_bytes(c["contract"]["data"]))
+
+
+def envelope_dims(contract: dict) -> dict:
+    """Embalaje con la MISMA fórmula para ambas arquitecturas: diámetro
+    exterior de la carcasa, longitud axial de la carcasa y volumen del
+    cilindro envolvente."""
+    cas = contract["casing"]
+    prof = cas["profile"]
+    d = 2.0 * (max(r[1] for r in prof) + float(cas["t_wall_mm"]))
+    ln = max(r[0] for r in prof) - min(r[0] for r in prof)
+    return dict(D_env_mm=d, L_env_mm=ln,
+                V_env_m3=math.pi / 4.0 * d * d * ln * 1e-9,
+                formula="D = 2 (r_casing + t_casing); L = z_max - z_min de "
+                        "la carcasa; V = pi/4 D^2 L")
+
+
+def recommend_pilot(doc: dict) -> dict:
+    """D-377: regla reproducible a 8 kg/s.
+
+    R1 pérdida de presión sólo si es una diferencia CALCULADA de forma
+    independiente y mayor que su incertidumbre (en L0 Δp/p es impuesto por
+    DP_OVER_P_DESIGN: empate por construcción, no ordena). R2 peor g global
+    (menor gana). R3 vector de márgenes ordenado de peor a mejor, el primer
+    valor que difiere en más de TIE_MARGIN decide (más negativo gana). R4
+    embalaje (volumen envolvente; menor gana) para desempatar o explicar el
+    compromiso."""
+    names = _g_names(_import_cb()[3])
+    rows = {}
+    for a in ACCEPT_ARCHS:
+        c = doc["cells"][f"8/{a}"]
+        con = _cell_contract(c)
+        rec = c["verification"]["record"]
+        g = [float(x) for x in c["g"]]
+        blocks, i = {}, 0
+        for b, n in G_BLOCKS:
+            blk = dict(zip(names[i:i + n], g[i:i + n]))
+            i += n
+            k = max(blk, key=blk.get)
+            blocks[b] = dict(max=blk[k], max_name=k)
+        rows[a] = dict(
+            key=f"8/{a}", stage=c["stage"],
+            contract_sha256=c["contract"]["sha256"],
+            selection_row=c["selection"]["row_index"],
+            theta=c["theta"], dp_over_p=rec["dp_over_p"],
+            dp_over_p_kind="impuesta (DP_OVER_P_DESIGN en L0)",
+            T04_K=rec["T04_K"], P04_Pa=rec["P04_Pa"],
+            mdot_out_kgs=c["verification"]["mdot_out"]["mdot_out_kgs"],
+            g_max=max(g), g_max_name=names[int(np.argmax(g))],
+            g_sorted=sorted(g, reverse=True), blocks=blocks,
+            g_dfam=g[-5:], **envelope_dims(con))
+    a, b = (rows[x] for x in ACCEPT_ARCHS)
+    steps = [dict(rule="R1 pérdida de presión", result="empate por "
+                  "construcción: Δp/p = 0,030 impuesto en L0 en ambas; no "
+                  "se usa para ordenar")]
+    winner, decided = None, None
+    if abs(a["g_max"] - b["g_max"]) > TIE_G:
+        winner = min(rows, key=lambda k: rows[k]["g_max"])
+        decided = "R2"
+        steps.append(dict(rule="R2 peor g global", result=f"gana {winner}"))
+    else:
+        steps.append(dict(rule="R2 peor g global", result=(
+            f"empate: g_max = {a['g_max']:+.6f} ({a['g_max_name']}) en ambas")))
+        for j, (x, y) in enumerate(zip(a["g_sorted"], b["g_sorted"])):
+            if abs(x - y) > TIE_MARGIN:
+                winner = ACCEPT_ARCHS[0] if x < y else ACCEPT_ARCHS[1]
+                decided = "R3"
+                steps.append(dict(rule="R3 márgenes ordenados", result=(
+                    f"posición {j} del vector ordenado: annular {x:+.6f} "
+                    f"frente a reverse_annular {y:+.6f}; gana {winner}")))
+                break
+        else:
+            steps.append(dict(rule="R3 márgenes ordenados", result="empate"))
+    va, vb = a["V_env_m3"], b["V_env_m3"]
+    pack = min(rows, key=lambda k: rows[k]["V_env_m3"])
+    steps.append(dict(rule="R4 embalaje", result=(
+        f"V_env annular {va:.4f} m³ frente a reverse_annular {vb:.4f} m³; "
+        f"menor: {pack}")))
+    if winner is None:
+        winner, decided = pack, "R4"
+    trade = ("sin compromiso: el embalaje confirma la regla"
+             if pack == winner else
+             f"compromiso: {winner} gana por {decided} pero {pack} embala "
+             "en menos volumen")
+    w = rows[winner]
+    return dict(key=f"8/{winner}", arch=winner, decided_by=decided,
+                stage=w["stage"], contract_sha256=w["contract_sha256"],
+                selection_row=w["selection_row"], steps=steps,
+                tradeoff=trade, rows=rows, vetable=True,
+                note=("En L0 las dos anulares comparten la física: la "
+                      "decisión sale de los márgenes DfAM del contrato y del "
+                      "embalaje, no de una diferencia aerotérmica."))
+
+
+def cmd_archive_cad(args) -> int:
+    ev = json.loads(Path(args.evidence).read_text(encoding="utf-8"))
+    cad = ev["cad_runs"]
+    if canonical_sha256(cad) != ev.get("cad_evidence_sha256"):
+        raise ScaleError("cad_evidence_sha256 no coincide con el bloque")
+    doc = load_acceptance()
+    errs = check_cad_runs(cad, matrix=doc)
+    if errs:
+        raise ScaleError(f"cad_runs inválido: {errs}")
+    doc["cad_runs"] = cad
+    doc["cad_evidence_sha256"] = ev["cad_evidence_sha256"]
+    doc["recommendation"] = recommend_pilot(doc)
+    save_acceptance(doc)
+    rec = doc["recommendation"]
+    print(f"[archive-cad] cad_runs archivado ({ev['cad_evidence_sha256']}) · "
+          f"recomendación {rec['key']} por {rec['decided_by']}")
+    return 0
+
+
+# -- informe --------------------------------------------------------------
+def _f(x, nd=3):
+    return "—" if x is None else f"{x:,.{nd}f}".replace(",", " ")
+
+
+def render_report(doc: dict) -> str:
+    inl = load_inlets()["inlets"]
+    cad = doc.get("cad_runs") or {}
+    rec = doc.get("recommendation") or {}
+    names = _g_names(_import_cb()[3])
+    m8 = doc["masses"]["8"]
+    L = []
+    w = L.append
+    w("# Phy-CB a mayor escala · resultados L0 de la matriz 5–25 kg/s")
+    w("")
+    w("Informe generado por `validation/scale_l0.py report` desde "
+      "`validation/scale_acceptance.json` (no se edita a mano). Fase 17.1 de "
+      "QSTUDIO, planes 17.1-02 y 17.1-03. **Todas las cifras son salidas de "
+      "software L0 (correlaciones), no ensayos experimentales.**")
+    w("")
+    w("## Identidad")
+    w("")
+    w(f"- Fuente del modelo (física Python que ejecutó la matriz): "
+      f"`{m8['model_source_sha']}`")
+    hs = sorted({doc['masses'][k].get('harness_sha') or
+                 doc['masses'][k]['model_source_sha'] for k in MATRIX_MASSES})
+    w(f"- Arnés de las corridas: {', '.join(f'`{h}`' for h in hs)} (sólo "
+      "rutas de soporte respecto a la fuente)")
+    if cad:
+        w(f"- Generador C#/PicoGK de los STL: `{cad['generator_source_sha']}`"
+          f" · launcher `{cad['launcher_sha256']}` · biblioteca "
+          f"`{cad['library_sha256']}`")
+        w(f"- `cad_evidence_sha256`: `{doc.get('cad_evidence_sha256')}`")
+    w(f"- Descargas Phy-AC congeladas: `validation/scale_inlets.json` "
+      f"(`inlets_sha256` {m8['inlets_sha256']})")
+    w(f"- Revisión de política: `{doc.get('policy_rev')}`")
+    w(f"- Receta: L0, T04 objetivo {ACCEPT_RECIPE['t4']:g} K, tope "
+      f"{ACCEPT_RECIPE['t4_max']:g} K, Jet-A, Inconel-625/718, Δp/p máx "
+      f"{ACCEPT_RECIPE['dp_max']}, PF máx {ACCEPT_RECIPE['pf_max']}, DfAM "
+      "activo, workers 1. Etapa 1 semilla 71 · 320/5/14; escalada única "
+      "semilla 137 · 480/7/18.")
+    w(f"- Tope por celda: {doc.get('timeout_policy', ACCEPT_TIMEOUT_POLICY)}")
+    w("")
+    w("## Etiquetas de las salidas")
+    w("")
+    w("- **T04**: impuesto por la receta (1200 K) y verificado ≤ 1250 K.")
+    w("- **P04**: calculado, P04 = P03 · (1 − Δp/p), con cierre comprobado.")
+    w("- **Caudal de salida (A7)**: calculado, aire + combustible.")
+    w("- **Δp/p**: impuesto por el cierre de diseño L0 (`DP_OVER_P_DESIGN` = "
+      "0,030); no es una pérdida calculada de forma independiente y no se "
+      "usa para ordenar arquitecturas.")
+    w("- **τ, η, PF, LBO, T pared**: calculados por correlaciones L0 con la "
+      "base D-388 (banda de τ 5–10 ms y LBO intensiva por transferencia, "
+      "vetable).")
+    w("")
+    w("## Matriz de aceptación (6/6)")
+    w("")
+    w("| Celda | Etapa | Tiempo (s) | Evals | P03 (Pa) | T03 (K) | PR AC | "
+      "T04 (K) | P04 (Pa) | ṁ salida (kg/s) | Δp/p | η | PF | τ (ms) [cota] "
+      "| LBO margen | g máx (nombre) |")
+    w("|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for k in MATRIX_MASSES:
+        for a in ACCEPT_ARCHS:
+            c = doc["cells"][f"{k}/{a}"]
+            r = c["verification"]["record"]
+            g = c["g"]
+            con = _cell_contract(c)
+            d = con["derived"]
+            w(f"| {k}/{a} | {c['stage']} | {c['run']['elapsed_s']} | "
+              f"{c['selection']['n_evals']} | {_f(c['inlet']['P03_Pa'], 2)} | "
+              f"{_f(c['inlet']['T03_K'], 2)} | {inl[k]['PR']:.3f} | "
+              f"{r['T04_K']:.1f} | {_f(r['P04_Pa'], 3)} | "
+              f"{c['verification']['mdot_out']['mdot_out_kgs']:.9f} | "
+              f"{r['dp_over_p']:.4f} | {r['eta_comb']:.5f} | {r['PF']:.5f} | "
+              f"{r['tau_ms']:.3f} [{d.get('tau_min_ms_applied')}–"
+              f"{d.get('tau_max_ms_applied')}] | {r['LBO_margin']:.3f} | "
+              f"{max(g):+.4f} ({names[int(np.argmax(g))]}) |")
+    w("")
+    w("Detalle por bloque (máximo de cada bloque de g, todos ≤ 0) y "
+      "dimensiones:")
+    w("")
+    w("| Celda | aero | spec | struct | dfam | D_L (mm) | D_casing (mm) | "
+      "L_tot (mm) | h_L (mm) | T pared máx (K) | SMD (µm) / atomizador | "
+      "Corona: copas × d_tip/d_hub (mm), A por copa (mm²) | Envolvente D×L "
+      "(mm), V (m³) |")
+    w("|---|---|---|---|---|---|---|---|---|---|---|---|---|")
+    for k in MATRIX_MASSES:
+        for a in ACCEPT_ARCHS:
+            c = doc["cells"][f"{k}/{a}"]
+            r = c["verification"]["record"]
+            con = _cell_contract(c)
+            gb = c["verification"]["g_blocks"]
+            sw, inj = con["swirler"], con["injectors"]
+            env = envelope_dims(con)
+            bl = " | ".join(
+                f"{max(gb[b].values()):+.4f} ({max(gb[b], key=gb[b].get)})"
+                for b, _n in G_BLOCKS)
+            w(f"| {k}/{a} | {bl} | {r['D_L_mm']:.1f} | "
+              f"{r['D_casing_mm']:.1f} | {r['L_tot_mm']:.1f} | "
+              f"{r['h_L_mm']:.1f} | {r['T_wall_max_K']:.1f} | "
+              f"{con['derived'].get('SMD_um')} / {inj.get('type')} | "
+              f"{sw['count']} × {sw['d_tip_mm']:.2f}/{sw['d_hub_mm']:.2f}, "
+              f"{sw['A_sw_each_mm2']:.1f} (anillo r {inj['ring_r_mm']:.1f}) | "
+              f"{env['D_env_mm']:.1f} × {env['L_env_mm']:.1f}, "
+              f"{env['V_env_m3']:.4f} |")
+    w("")
+    w("DfAM analítico del contrato exportado (checker real, "
+      "`g_dfam` = t_min, d_hole_min, overhang, drainability, effusion_band):")
+    w("")
+    for k in MATRIX_MASSES:
+        for a in ACCEPT_ARCHS:
+            c = doc["cells"][f"{k}/{a}"]
+            de = c["verification"]["dfam_exported"]
+            w(f"- {k}/{a}: imprimible = {de['feasible']} · g_dfam "
+              f"[{', '.join(f'{x:+.4f}' for x in de['g_dfam'])}]")
+    w("")
+    w("Contratos (SHA256 de los bytes archivados) y semillas:")
+    w("")
+    for k in MATRIX_MASSES:
+        for a in ACCEPT_ARCHS:
+            c = doc["cells"][f"{k}/{a}"]
+            w(f"- {k}/{a}: `{c['contract']['sha256']}` · semilla "
+              f"{c['budget']['seed']} · descarga AC "
+              f"`{c['inlet']['contract_sha256'][:16]}…` · fila del "
+              f"checkpoint {c['selection']['row_index']}")
+    w("")
+    w("## Comparación D-377 a 8 kg/s y recomendación")
+    w("")
+    if rec:
+        rows = rec["rows"]
+        w("| Magnitud | annular | reverse_annular |")
+        w("|---|---|---|")
+        for lab, key, fmt in (("Δp/p (impuesta)", "dp_over_p", "{:.4f}"),
+                              ("T04 (K)", "T04_K", "{:.1f}"),
+                              ("P04 (Pa)", "P04_Pa", "{:.3f}"),
+                              ("ṁ salida (kg/s)", "mdot_out_kgs", "{:.9f}"),
+                              ("g máx", "g_max", "{:+.6f}"),
+                              ("D envolvente (mm)", "D_env_mm", "{:.1f}"),
+                              ("L envolvente (mm)", "L_env_mm", "{:.1f}"),
+                              ("V envolvente (m³)", "V_env_m3", "{:.4f}")):
+            w(f"| {lab} | {fmt.format(rows['annular'][key])} | "
+              f"{fmt.format(rows['reverse_annular'][key])} |")
+        w("| g_dfam | " + " | ".join(
+            "[" + ", ".join(f"{x:+.3f}" for x in rows[a]["g_dfam"]) + "]"
+            for a in ACCEPT_ARCHS) + " |")
+        if cad:
+            w("| DfAM vóxel g (overhang, polvo, drenaje) | " + " | ".join(
+                "[" + ", ".join(f"{x:+.3f}" for x in
+                                cad["runs"][a]["dfam"]["g_voxel"]) + "]"
+                for a in ACCEPT_ARCHS) + " |")
+        w("")
+        w("Regla aplicada (en orden):")
+        w("")
+        for s in rec["steps"]:
+            w(f"- {s['rule']}: {s['result']}")
+        w("")
+        w(f"**Recomendación (vetable): `{rec['key']}`** (decide "
+          f"{rec['decided_by']}; etapa {rec['stage']}; contrato "
+          f"`{rec['contract_sha256']}`; fila {rec['selection_row']}). "
+          f"{rec['tradeoff']}. {rec['note']}")
+        if cad:
+            va = {a: cad["runs"][a]["dfam"] for a in ACCEPT_ARCHS}
+            w("")
+            w("El DfAM sobre vóxeles as-built se registra como evidencia "
+              "separada del gate analítico: annular imprimible = "
+              f"{va['annular']['feasible']}, reverse_annular imprimible = "
+              f"{va['reverse_annular']['feasible']}. No entra en la regla "
+              "porque mide la geometría generada a vóxel 0,8 mm (paredes "
+              "subidas a 2 vóxeles), no el diseño verificado.")
+    w("")
+    w("## Geometría PicoGK (D-386)")
+    w("")
+    if cad:
+        w(f"Compilación única `{' '.join(CAD_BUILD_ARGV)}` en "
+          f"{cad['build']['elapsed_s']} s; vóxel {cad['voxel_mm']} mm para "
+          "los pilotos y 1,2 mm para el smoke KJ66 (T29). Ejecución en "
+          "serie con tope de 180 s y 18 GiB por geometría.")
+        w("")
+        w("| Caso | Tiempo (s) | Pico RAM (GiB) | Piezas | DfAM vóxel g | "
+          "Imprimible | Topología |")
+        w("|---|---|---|---|---|---|---|")
+        for key in CAD_RUN_KEYS:
+            r = cad["runs"][key]
+            dd = r.get("dfam") or {}
+            topo = r.get("topology")
+            tt = ("—" if topo is None else
+                  f"{topo['n_cups']} copas OK, paso central "
+                  f"{'abierto' if topo['central_passage_open'] else 'CERRADO'}")
+            w(f"| {key} | {r['run']['elapsed_s']} | "
+              f"{r['run']['peak_rss_gib']} | {len(r.get('parts') or [])} | "
+              f"[{', '.join(f'{x:+.3f}' for x in dd.get('g_voxel', []))}] | "
+              f"{dd.get('feasible')} | {tt} |")
+        w("")
+        for key in CAD_RUN_KEYS:
+            r = cad["runs"][key]
+            w(f"**{key}** · contrato `{r['contract']['sha256']}` · reporte "
+              f"as-built `{r['dfam_report']['sha256']}`")
+            w("")
+            w("| Pieza | Volumen vóxel (mm³) | Caja (mm) | Triángulos | "
+              "STL SHA256 |")
+            w("|---|---|---|---|---|")
+            for p in r.get("parts") or []:
+                bb = ", ".join(f"{x:.1f}" for x in p["bbox_mm"])
+                w(f"| {p['name']} | {_f(p['volume_voxel_mm3'], 0)} | [{bb}] | "
+                  f"{p['n_triangles']} | `{p['stl_sha256'][:16]}…` |")
+            if r.get("dfam", {}).get("violations"):
+                w("")
+                w("Incumplimientos voxelizados registrados: " + "; ".join(
+                    r["dfam"]["violations"]))
+            w("")
+        neg = cad["negative_count"]
+        w(f"Ensayo negativo: contrato de escala con `swirler.count` ≠ "
+          f"`injectors.count` → rc {neg['run']['rc']} antes de voxelizar "
+          f"({'; '.join(neg['message'])}).")
+        w("")
+        w(f"Los STL quedan en `{cad['out_root']}` (directorio de ejecución, "
+          "fuera de Git), ligados por SHA256. Los tres STL de campaña G4 "
+          "corresponden a las corridas finales de la fase 18.")
+    w("")
+    w("## Limitaciones de la evidencia L0")
+    w("")
+    w("- Correlaciones L0 sin CFD ni ensayo; la base de residencia y LBO es "
+      "una transferencia (D-388) vetable.")
+    w("- En L0 annular y reverse_annular comparten la física: misma θ salvo "
+      "la gate y mismos g aerotérmicos; sólo el contrato y el generador las "
+      "distinguen.")
+    w("- A 8 kg/s el vaporizador conserva `n_tubes` = 6 copas; 5 y 25 kg/s "
+      "usan micromix con el conteo por sector.")
+    w("- El generador C# coloca cada copa con eje paralelo a Z sobre la "
+      "estación del domo hemisférico; la camisa atraviesa toda la pared "
+      "oblicua del domo. Los tubos del vaporizador siguen las cotas "
+      "`tube_z0/z1` del contrato (plano del domo), no la estación de la "
+      "copa: es la convención actual del contrato.")
+    w("- El DfAM as-built usa paredes de 2 vóxeles (1,6 mm a 0,8 mm), más "
+      "gruesas que el diseño verificado.")
+    w("")
+    w("## Reproducción")
+    w("")
+    w("```")
+    w("python -B -X utf8 validation/scale_l0.py verify --masses 5,8,25")
+    w("python -B -X utf8 validation/scale_l0.py accept --mass 5,25 "
+      "--out-root DIR   # tope D-391")
+    w("python -B -X utf8 validation/scale_l0.py cad --out-root DIR "
+      "--evidence DIR/cad_evidence.json")
+    w("python -B -X utf8 validation/scale_l0.py archive-cad --evidence "
+      "DIR/cad_evidence.json")
+    w("python -B -X utf8 validation/scale_l0.py report")
+    w("python -B -X utf8 validation/scale_l0.py verify-handoff --wave 3 "
+      "--summary 17.1-03-SUMMARY.md")
+    w("```")
+    w("")
+    return "\n".join(L)
+
+
+def cmd_report(args) -> int:
+    doc = load_acceptance()
+    text = render_report(doc)
+    (CB_ROOT / REPORT_REL).write_text(text, encoding="utf-8", newline="\n")
+    print(f"[report] {REPORT_REL} · {sha256_bytes(text.encode('utf-8'))}")
+    return 0
+
+
+# -- handoff de la ola 3 ----------------------------------------------------
+def _show_blob(rev: str, rel: str) -> bytes:
+    p = subprocess.run(["git", "-C", str(CB_ROOT), "show", f"{rev}:{rel}"],
+                       capture_output=True, timeout=60)
+    if p.returncode != 0:
+        raise ScaleError(f"{rel} no está en {rev}")
+    return p.stdout
+
+
+def _is_ancestor(a: str, b: str) -> bool:
+    return subprocess.run(["git", "-C", str(CB_ROOT), "merge-base",
+                           "--is-ancestor", a, b], timeout=60).returncode == 0
+
+
+def cmd_verify_handoff_3(args) -> int:
+    f = parse_summary_fields(Path(args.summary).read_text(encoding="utf-8"),
+                             SUMMARY_FIELDS_3)
+    for k in ("model_source_sha", "generator_source_sha", "model_delivery_sha"):
+        if not re.fullmatch(r"[0-9a-f]{40}", f[k]):
+            raise ScaleError(f"{k} debe ser un SHA de commit completo")
+        try:
+            _git(CB_ROOT, "cat-file", "-e", f[k] + "^{commit}")
+        except ScaleError:
+            raise ScaleError(f"{k} no existe en el checkout de Phy-CB")
+    for k in ("matrix_sha256", "report_sha256", "cad_evidence_sha256",
+              "launcher_sha256", "library_sha256"):
+        if not re.fullmatch(r"[0-9a-f]{64}", f[k]):
+            raise ScaleError(f"{k} debe ser un SHA256 en minúsculas")
+    if f["matrix_acceptance_count"] != "6" or f["cad_runs_count"] != "3":
+        raise ScaleError("se exigen matrix_acceptance_count 6 y "
+                         "cad_runs_count 3")
+    src, gen, dlv = (f["model_source_sha"], f["generator_source_sha"],
+                     f["model_delivery_sha"])
+    if not (_is_ancestor(src, gen) and _is_ancestor(gen, dlv)):
+        raise ScaleError("se exige model_source_sha ⊑ generator_source_sha ⊑ "
+                         "model_delivery_sha")
+    prod = [p for p in _git(CB_ROOT, "diff", "--name-only", src, dlv,
+                            "--").splitlines()
+            if p and not is_support_path(p)]
+    if prod:
+        raise ScaleError(f"la entrega cambia física respecto a la fuente: "
+                         f"{prod}")
+    gen_ch = [p for p in _git(CB_ROOT, "diff", "--name-only", gen, dlv,
+                              "--").splitlines()
+              if p and p.startswith(GENERATOR_PREFIXES)]
+    if gen_ch:
+        raise ScaleError(f"el generador C# cambió tras el gate CAD: {gen_ch}")
+    mblob = _show_blob(dlv, EVIDENCE_REL)
+    if sha256_bytes(mblob) != f["matrix_sha256"]:
+        raise ScaleError("matrix_sha256 no coincide con la matriz entregada")
+    rblob = _show_blob(dlv, REPORT_REL)
+    if sha256_bytes(rblob) != f["report_sha256"]:
+        raise ScaleError("report_sha256 no coincide con el informe entregado")
+    doc = _strict_json(mblob)
+    cells = [c for c in (doc.get("cells") or {}).values()
+             if c.get("status") == "accepted"]
+    keys = sorted((c["mass"], c["arch"]) for c in cells)
+    want = sorted((m, a) for m in MATRIX_MASSES for a in ACCEPT_ARCHS)
+    if keys != want:
+        raise ScaleError(f"la matriz no tiene las 6 celdas únicas: {keys}")
+    if {c["model_source_sha"] for c in cells} != {src}:
+        raise ScaleError("las celdas no comparten model_source_sha")
+    if len({c.get("policy_rev") for c in cells}) != 1:
+        raise ScaleError("las celdas no comparten revisión de política")
+    if matrix_model_source(doc) != src:
+        raise ScaleError("las masas aceptadas no son de model_source_sha")
+    cad = doc.get("cad_runs") or {}
+    if canonical_sha256(cad) != f["cad_evidence_sha256"] \
+            or doc.get("cad_evidence_sha256") != f["cad_evidence_sha256"]:
+        raise ScaleError("cad_evidence_sha256 no coincide con cad_runs")
+    errs = check_cad_runs(cad, generator_sha=gen, matrix=doc,
+                          bins=dict(launcher=f["launcher_sha256"],
+                                    library=f["library_sha256"]))
+    if errs:
+        raise ScaleError(f"cad_runs inválido: {errs}")
+    rec = doc.get("recommendation") or {}
+    if rec.get("key") not in (f"8/{a}" for a in ACCEPT_ARCHS) \
+            or rec.get("contract_sha256") != doc["cells"][rec["key"]][
+                "contract"]["sha256"] \
+            or f"`{rec['key']}`".encode("utf-8") not in rblob:
+        raise ScaleError("recomendación ausente o incoherente con el informe")
+    if _changed_since(src):
+        raise ScaleError("la física del árbol no es la de model_source_sha: "
+                         "no se puede reevaluar la matriz")
+    if _verify_masses(doc, list(MATRIX_MASSES)) != 0:
+        raise ScaleError("la reevaluación de la matriz entregada falló")
+    print(f"[verify-handoff 3] OK · fuente {src[:12]} · generador {gen[:12]} "
+          f"· entrega {dlv[:12]} · 6 celdas · 3 corridas CAD · "
+          f"recomendación {rec['key']}")
+    return 0
+
+
 # ---------------------------------------------------------------------- CLI
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="scale_l0.py", description=__doc__,
@@ -2002,6 +3228,12 @@ def build_parser() -> argparse.ArgumentParser:
     vf.add_argument("--masses", required=True)
     vc = sub.add_parser("verify-candidate")
     vc.add_argument("--candidate", required=True)
+    cd = sub.add_parser("cad")
+    cd.add_argument("--out-root", required=True)
+    cd.add_argument("--evidence", required=True)
+    ar = sub.add_parser("archive-cad")
+    ar.add_argument("--evidence", required=True)
+    sub.add_parser("report")
     r = sub.add_parser("_ac-reeval")
     r.add_argument("--request", required=True)
     r.add_argument("--response", required=True)
@@ -2014,7 +3246,8 @@ def main(argv=None) -> int:
           "diagnose": cmd_diagnose, "verify-handoff": cmd_verify_handoff,
           "check-inlets": cmd_check_inlets, "_ac-reeval": _ac_reeval_main,
           "accept": cmd_accept, "verify": cmd_verify,
-          "verify-candidate": cmd_verify_candidate}
+          "verify-candidate": cmd_verify_candidate, "cad": cmd_cad,
+          "archive-cad": cmd_archive_cad, "report": cmd_report}
     if args.cmd == "acquire" and args.out_root is None:
         doc = load_inlets()
         key = str(args.mass)
